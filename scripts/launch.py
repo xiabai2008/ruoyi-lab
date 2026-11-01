@@ -6,6 +6,14 @@ bat 本身执行完毕但调用方的管道始终不关闭，实测一次 4 站�
 Python 的 subprocess 默认 close_fds=True，句柄不继承，调用方能立刻拿到退出码。
 
 用法：python scripts\launch.py R4
+      python scripts\launch.py R10 --lab.mode=vuln   # R10 漏洞演示模式（透传 Spring 参数）
+
+R10（JeecgBoot）支持两套运行模式，默认 safe：
+  - safe：保持 JeecgBoot 3.6.3 官方已修复行为（默认）
+  - vuln：开启「漏洞演示模块」的 8 个历史漏洞端点
+    开启方式（二选一，优先级：命令行参数 > 环境变量）：
+      python scripts\launch.py R10 --lab.mode=vuln
+      set LAB_MODE=vuln && python scripts\launch.py R10
 """
 import os
 import subprocess
@@ -54,6 +62,13 @@ def main() -> int:
     site = sys.argv[1].upper()
     if site not in SITES:
         print("[ERROR] unknown site: %s" % site)
+        return 1
+
+    # 额外 Spring 参数透传（如 --lab.mode=vuln），也支持用 LAB_MODE 环境变量给 R10 切模式
+    extra_args = sys.argv[2:]
+    lab_mode = (os.environ.get("LAB_MODE") or "").strip().lower()
+    if lab_mode and lab_mode not in ("safe", "vuln"):
+        print("[ERROR] LAB_MODE 只能是 safe 或 vuln，实际: %s" % lab_mode)
         return 1
 
     if site == "R8":
@@ -109,6 +124,10 @@ def main() -> int:
     profile = PROFILES.get(site, "druid,prod")
     if profile:
         cmd.append("--spring.profiles.active=%s" % profile)
+    # R10 漏洞演示模式：--lab.mode 既等价于 -Dlab.mode，走 Spring 环境属性，默认 safe
+    if site == "R10" and lab_mode:
+        cmd.append("--lab.mode=%s" % lab_mode)
+    cmd.extend(extra_args)
 
     with open(log, "ab") as f_out, open(err, "ab") as f_err:
         proc = subprocess.Popen(
@@ -126,7 +145,8 @@ def main() -> int:
     os.makedirs(os.path.dirname(pidfile), exist_ok=True)
     with open(pidfile, "w") as f:
         f.write(str(proc.pid))
-    print("[OK] %s launched pid=%s port=%s" % (site, proc.pid, port))
+    mode_note = (" lab.mode=%s" % lab_mode) if (site == "R10" and lab_mode) else ""
+    print("[OK] %s launched pid=%s port=%s%s" % (site, proc.pid, port, mode_note))
     print("[OK] logs: %s / %s" % (log, err))
     return 0
 

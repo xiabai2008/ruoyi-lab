@@ -26,6 +26,7 @@ r"""靶场统一入口：一键启停 + 真健康检查。
     python scripts\lab.py up R1 R2            # 按依赖顺序启动（自动带上基础设施）
     python scripts\lab.py up infra            # 只起 MySQL + Redis + Nginx
     python scripts\lab.py up site             # 起 R1–R12（含 R12 的 R2 依赖）
+    python scripts\lab.py up R10 --lab-mode vuln  # R10 漏洞演示模式（默认 safe，见 docs/R10/漏洞演示模块.md）
     python scripts\lab.py down R1             # 停止
     python scripts\lab.py verify R1           # 断言全 UP，任一不健康即退出码 1
     python scripts\lab.py clean               # 清掉「PID 在但进程已死」的残留
@@ -833,6 +834,27 @@ def usage() -> int:
 
 def main() -> int:
     argv = sys.argv[1:]
+    if not argv:
+        return usage()
+    # R10 漏洞演示模式开关（--lab-mode safe|vuln），通过 LAB_MODE 环境变量透传给 launch.py。
+    # 只有 R10 认这个开关，其它站点启动参数不受影响；默认不加 = safe。
+    lab_mode = ""
+    normalized = []
+    index = 0
+    while index < len(argv):
+        if argv[index] == "--lab-mode" and index + 1 < len(argv):
+            lab_mode = argv[index + 1].strip().lower()
+            index += 2
+            continue
+        normalized.append(argv[index])
+        index += 1
+    if lab_mode:
+        if lab_mode not in ("safe", "vuln"):
+            print("[ERROR] --lab-mode 只能是 safe 或 vuln，实际: %s" % lab_mode)
+            return 2
+        os.environ["LAB_MODE"] = lab_mode
+        print("[..] R10 漏洞演示模式: %s（启动 R10 时以 --lab.mode=%s 传入 JVM）" % (lab_mode, lab_mode))
+    argv = normalized
     if not argv:
         return usage()
     cmd, names = argv[0].lower(), argv[1:]
