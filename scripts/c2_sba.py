@@ -1,5 +1,13 @@
 r"""C2-1 Spring Boot Admin server/client 独立启停。
 
+C2-1b（client）同时是「停车网关」（Spring Cloud Gateway 3.1.0 + SBA reactive client），
+默认以漏洞模式启动；改 C2_SBA_CLIENT_MODE=safe 可切到安全模式（收敛 actuator 暴露），
+用于验证扫描器在「已修复」目标上不误报：
+
+    set C2_SBA_CLIENT_MODE=safe && python scripts\c2_sba.py start
+    python scripts\c2_sba.py stop
+    set C2_SBA_CLIENT_MODE=vuln && python scripts\c2_sba.py start
+
 用法：
     python scripts\c2_sba.py start|stop|status
 """
@@ -23,8 +31,15 @@ SERVER_PORT = 19311
 CLIENT_PORT = 19312
 SERVER_JAR = os.path.join(RUN_DIR, "sba-server.jar")
 CLIENT_JAR = os.path.join(RUN_DIR, "sba-client.jar")
+# safe 模式跑的是 gateway 3.1.1（CVE-2022-22947 修复版）构建的 jar
+CLIENT_JAR_SAFE = os.path.join(RUN_DIR, "sba-client-safe.jar")
 SERVER_PID = os.path.join(STATE_DIR, "C2-sba-server.pid")
 CLIENT_PID = os.path.join(STATE_DIR, "C2-sba-client.pid")
+# C2-1b 的漏洞 / 安全模式：safe 时给 client 加 --spring.profiles.active=safe，
+# 只在启动时生效（切模式需要 stop → start）。
+CLIENT_MODE = (os.environ.get("C2_SBA_CLIENT_MODE") or "vuln").strip().lower()
+if CLIENT_MODE not in ("vuln", "safe"):
+    CLIENT_MODE = "vuln"
 FLAGS = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -103,7 +118,7 @@ def fail_cleanup(pidfile, pid=None):
         pass
 
 
-def spawn(jar, port, pidfile, logname):
+def spawn(jar, port, pidfile, logname, extra_args=None):
     os.makedirs(LOG_DIR, exist_ok=True)
     os.makedirs(STATE_DIR, exist_ok=True)
     log = os.path.join(LOG_DIR, logname)
@@ -114,9 +129,11 @@ def spawn(jar, port, pidfile, logname):
         env.pop(key, None)
     env["JAVA_HOME"] = JDK17_HOME
     env["PATH"] = os.path.join(JDK17_HOME, "bin") + os.pathsep + env.get("PATH", "")
+    cmd = [JAVA, "-Xms128m", "-Xmx448m", "-Dfile.encoding=UTF-8", "-jar", jar, "--server.port=%d" % port]
+    cmd.extend(extra_args or [])
     with open(log, "ab") as out:
         proc = subprocess.Popen(
-            [JAVA, "-Xms128m", "-Xmx384m", "-Dfile.encoding=UTF-8", "-jar", jar, "--server.port=%d" % port],
+            cmd,
             cwd=RUN_DIR,
             stdin=subprocess.DEVNULL,
             stdout=out,
@@ -132,8 +149,9 @@ def spawn(jar, port, pidfile, logname):
 
 
 def start():
-    if not os.path.exists(SERVER_JAR) or not os.path.exists(CLIENT_JAR):
-        print("[FAIL] 缺少 jar，请先构建 src/C2/sba")
+    client_jar = CLIENT_JAR_SAFE if CLIENT_MODE == "safe" else CLIENT_JAR
+    if not os.path.exists(SERVER_JAR) or not os.path.exists(client_jar):
+        print("[FAIL] 缺少 jar，请先运行 python scripts\\c2_build.py sba")
         return 1
     if port_open(SERVER_PORT) and port_open(CLIENT_PORT):
         print("[SKIP] SBA server/client 已在运行")
@@ -156,7 +174,9 @@ def start():
             print("[FAIL] SBA client PID 存活但端口未监听")
             fail_cleanup(CLIENT_PID, stale)
             return 1
-        client_pid = spawn(CLIENT_JAR, CLIENT_PORT, CLIENT_PID, "sba-client-console.log")
+        client_extra = ["--spring.profiles.active=safe"] if CLIENT_MODE == "safe" else None
+        print("[..] C2-1b 模式: %s（%s）" % (CLIENT_MODE, os.path.basename(client_jar)))
+        client_pid = spawn(client_jar, CLIENT_PORT, CLIENT_PID, "sba-client-console.log", client_extra)
     if not wait_http("http://127.0.0.1:%d/actuator/health" % CLIENT_PORT, 120, "SBA client /actuator/health"):
         fail_cleanup(CLIENT_PID, client_pid)
         return 1
@@ -206,7 +226,7 @@ def stop():
 
 
 def status():
-    print("C2-1 Spring Boot Admin")
+    print("C2-1 Spring Boot Admin（C2-1b 模式: %s）" % CLIENT_MODE)
     for label, pidfile, port in (
         ("sba-server", SERVER_PID, SERVER_PORT),
         ("sba-client", CLIENT_PID, CLIENT_PORT),

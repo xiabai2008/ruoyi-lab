@@ -1,5 +1,15 @@
 r"""C2-3 Spring Cloud Function 独立启停。
 
+默认（C2_SCF_MODE=vuln）跑真实受影响版 3.2.2（CVE-2022-22963 可 SpEL 求值执行命令）；
+C2_SCF_MODE=safe 跑修复版 3.2.5（受限 SimpleEvaluationContext，T(...) 求值被拒），
+用于验证扫描器在「已升级版本」上不误报：
+
+    set C2_SCF_MODE=safe && python scripts\c2_scf.py start
+    python scripts\c2_scf.py stop
+    set C2_SCF_MODE=vuln && python scripts\c2_scf.py start
+
+两个 jar 由 python scripts\c2_build.py scf 一次构建（scf.jar / scf-safe.jar）。
+
 用法：
     python scripts\c2_scf.py start|stop|status
 """
@@ -19,7 +29,13 @@ STATE_DIR = os.path.join(ROOT, ".state")
 JDK17_HOME = __import__("labenv").JDK17_HOME
 JAVA = os.path.join(JDK17_HOME, "bin", "java.exe")
 JAR = os.path.join(RUN_DIR, "scf.jar")
+# safe 模式跑修复版 3.2.5 的 jar（CVE-2022-22963 修复版本 >= 3.2.3）
+JAR_SAFE = os.path.join(RUN_DIR, "scf-safe.jar")
 PIDFILE = os.path.join(STATE_DIR, "C2-scf.pid")
+# C2-3 漏洞 / 安全模式：只影响启动哪个 jar，需 stop -> start 才生效
+MODE = (os.environ.get("C2_SCF_MODE") or "vuln").strip().lower()
+if MODE not in ("vuln", "safe"):
+    MODE = "vuln"
 PORT = 19314
 FLAGS = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
 
@@ -86,16 +102,17 @@ def fail_cleanup(pidfile, pid=None):
 
 
 def start():
+    jar = JAR_SAFE if MODE == "safe" else JAR
     if port_open(PORT):
-        print("[SKIP] Spring Cloud Function 已在运行，端口 %d" % PORT)
+        print("[SKIP] Spring Cloud Function 已在运行，端口 %d（如需切模式请先 stop）" % PORT)
         return 0
     pid = read_pid(PIDFILE)
     if pid and pid_alive(pid):
         print("[FAIL] PID %s 存活但端口 %d 未监听" % (pid, PORT))
         fail_cleanup(PIDFILE, pid)
         return 1
-    if not os.path.exists(JAR):
-        print("[FAIL] 缺少 %s，请先构建 src/C2/scf" % JAR)
+    if not os.path.exists(jar):
+        print("[FAIL] 缺少 %s，请先运行 python scripts\\c2_build.py scf" % jar)
         return 1
     os.makedirs(LOG_DIR, exist_ok=True)
     os.makedirs(STATE_DIR, exist_ok=True)
@@ -107,9 +124,10 @@ def start():
     env["JAVA_HOME"] = JDK17_HOME
     env["PATH"] = os.path.join(JDK17_HOME, "bin") + os.pathsep + env.get("PATH", "")
     log = os.path.join(LOG_DIR, "scf-console.log")
+    print("[..] C2-3 模式: %s（%s）" % (MODE, os.path.basename(jar)))
     with open(log, "ab") as out:
         proc = subprocess.Popen(
-            [JAVA, "-Xms128m", "-Xmx320m", "-Dfile.encoding=UTF-8", "-jar", JAR, "--server.port=%d" % PORT],
+            [JAVA, "-Xms128m", "-Xmx320m", "-Dfile.encoding=UTF-8", "-jar", jar, "--server.port=%d" % PORT],
             cwd=RUN_DIR,
             stdin=subprocess.DEVNULL,
             stdout=out,
@@ -166,7 +184,7 @@ def stop():
 
 def status():
     pid = read_pid(PIDFILE)
-    print("C2-3 Spring Cloud Function")
+    print("C2-3 Spring Cloud Function（模式: %s）" % MODE)
     print("  scf          pid=%-7s alive=%-5s port=%-5d listening=%s" % (pid, pid_alive(pid), PORT, port_open(PORT)))
     return 0
 

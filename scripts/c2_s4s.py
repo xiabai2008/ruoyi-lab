@@ -1,10 +1,20 @@
 r"""C2-2 Spring4Shell 独立 Tomcat 启停。
 
+默认（C2_S4S_MODE=vuln）是真实受影响的 Tomcat 9 + Spring 5.3.17；
+C2_S4S_MODE=safe 时通过 CATALINA_OPTS 传入 -Ds4s.hardened=true，
+打开应用层 @InitBinder class.* 字段黑名单（SafeBinder），用于对拍
+「修复后 --exploit 不应 CONFIRMED」：
+
+    set C2_S4S_MODE=safe && python scripts\c2_s4s.py start
+    python scripts\c2_s4s.py stop
+    set C2_S4S_MODE=vuln && python scripts\c2_s4s.py start
+
 用法：
     python scripts\c2_s4s.py start|stop|status
 """
 import ctypes
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -24,6 +34,10 @@ PORT = 19313
 WAR_SRC = os.path.join(RUN_DIR, "ROOT.war")
 WAR_DST = os.path.join(TOMCAT, "webapps", "ROOT.war")
 PIDFILE = os.path.join(STATE_DIR, "C2-s4s.pid")
+# C2-2 漏洞 / 安全模式：safe 给 Tomcat 传 -Ds4s.hardened=true（@InitBinder 黑名单）
+MODE = (os.environ.get("C2_S4S_MODE") or "vuln").strip().lower()
+if MODE not in ("vuln", "safe"):
+    MODE = "vuln"
 FLAGS = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -101,6 +115,43 @@ def prepare_war():
         print("[..] 已部署 ROOT.war 到 %s" % WAR_DST)
 
 
+# Tomcat AccessLogValve 默认 buffered=true：写满缓冲/关闭时才刷盘。
+# CVE-2022-22965 的利用链要等 AccessLogValve 把 pattern（JSP 代码）写进
+# webapps/ROOT/<name>.jsp 才能访问到；缓冲会让「写入 → 轮询」之间出现数秒到十几秒
+# 的随机延迟，扫描器 15 次 ×1s 轮询偶尔会全部落空（实测 2026-11-02）。
+# 这里把 AccessLogValve 改成 buffered=false（Tomcat 官方支持的配置项），
+# 只影响刷盘时机，不改变漏洞本身，换来可重复的对拍。
+_ACCESSLOG_RE = re.compile(
+    r'(<Valve\s+className="org\.apache\.catalina\.valves\.AccessLogValve")([\s\S]*?)(/>)'
+)
+
+
+def ensure_accesslog_unbuffered():
+    """把 AccessLogValve 的 buffered 改为 false（幂等），让归档日志立即刷盘。"""
+    conf = os.path.join(TOMCAT, "conf", "server.xml")
+    try:
+        with open(conf, "r", encoding="utf-8") as f:
+            text = f.read()
+    except OSError as exc:
+        print("[WARN] 读不到 server.xml，跳过 AccessLogValve 刷盘调优: %s" % exc)
+        return
+    match = _ACCESSLOG_RE.search(text)
+    if not match:
+        print("[WARN] server.xml 未找到 AccessLogValve，跳过刷盘调优")
+        return
+    body = match.group(2)
+    if "buffered=" in body:
+        print("[OK] AccessLogValve 已是 unbuffered 配置")
+        return
+    new_text = text[: match.start(2)] + body + ' buffered="false"' + text[match.end(2):]
+    try:
+        with open(conf, "w", encoding="utf-8") as f:
+            f.write(new_text)
+        print("[OK] 已将 AccessLogValve 调成 buffered=false（利用链 JSP 立即刷盘）")
+    except OSError as exc:
+        print("[WARN] 写 server.xml 失败，跳过刷盘调优: %s" % exc)
+
+
 def start():
     if port_open(PORT):
         print("[SKIP] Spring4Shell 已在运行，端口 %d" % PORT)
@@ -115,6 +166,7 @@ def start():
     except RuntimeError as exc:
         print("[FAIL] %s" % exc)
         return 1
+    ensure_accesslog_unbuffered()
     os.makedirs(LOG_DIR, exist_ok=True)
     os.makedirs(STATE_DIR, exist_ok=True)
     env = dict(os.environ)
@@ -126,6 +178,10 @@ def start():
     env["CATALINA_HOME"] = TOMCAT
     env["CATALINA_BASE"] = TOMCAT
     env["PATH"] = os.path.join(JDK17_HOME, "bin") + os.pathsep + env.get("PATH", "")
+    if MODE == "safe":
+        # 应用层修复：SafeBinder 打开 class.* 字段绑定黑名单
+        env["CATALINA_OPTS"] = (env.get("CATALINA_OPTS", "") + " -Ds4s.hardened=true").strip()
+    print("[..] C2-2 模式: %s" % MODE)
     log = os.path.join(LOG_DIR, "tomcat-console.log")
     with open(log, "ab") as out:
         proc = subprocess.Popen(
@@ -186,7 +242,7 @@ def stop():
 
 def status():
     pid = read_pid(PIDFILE)
-    print("C2-2 Spring4Shell")
+    print("C2-2 Spring4Shell（模式: %s）" % MODE)
     print("  s4s          pid=%-7s alive=%-5s port=%-5d listening=%s" % (pid, pid_alive(pid), PORT, port_open(PORT)))
     return 0
 
