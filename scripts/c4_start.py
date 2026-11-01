@@ -92,6 +92,17 @@ C4 = {
         "probe": "ssti",
         "env": {"JAVA_HOME": r"D:\develop\jdk-17.0.0.1"},
     },
+    "gen": {
+        "id": "C4-5",
+        "port": 19082,
+        "pidfile": "C4-5-gen.pid",
+        "exe": r"D:\develop\jdk-17.0.0.1in\java.exe",
+        "args": ["-jar", "c4-ruoyi-gen-ssti-1.0.0.jar"],
+        "cwd": os.path.join(ROOT, "runtime", "C4", "gen"),
+        "desc": "若依代码生成预览 SSTI（真实 Freemarker 渲染 tableName）",
+        "probe": "ssti_gen",
+        "env": {"JAVA_HOME": r"D:\develop\jdk-17.0.0.1"},
+    },
 }
 
 ALL = list(C4)
@@ -190,6 +201,30 @@ def probe_ssti(port: int) -> str:
         return f"不可达: {e}"
     if '"49"' in body or "=49" in body:
         return "模板引擎求值正常（${7*7}→49）"
+    return f"未求值（靶场异常）：{body[:80]}"
+
+
+def probe_ssti_gen(port: int) -> str:
+    """对若依代码生成 SSTI 靶场做真实探针：确认 tableName 里的表达式真被求值。
+
+    与 probe_ssti 同理：只检查端口会把「服务起了但模板引擎没接对」当成健康。
+    这里直接发 URL 编码的 ${7*7}，断言响应出现 49 且不含原始表达式。
+    """
+    import urllib.error
+    import urllib.request
+
+    url = f"http://127.0.0.1:{port}/tool/gen/preview/1?tableName=sys_user_%24%7B7*7%7D"
+    try:
+        with urllib.request.urlopen(url, timeout=8) as r:
+            body = r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return f"HTTP {e.code}（接口异常）"
+    except Exception as e:
+        return f"不可达: {e}"
+    if "7*7" in body:
+        return f"未求值（表达式被原样回显）：{body[:60]}"
+    if "sys_user_49" in body or '"49"' in body:
+        return "模板引擎求值正常（tableName ${7*7}→49）"
     return f"未求值（靶场异常）：{body[:80]}"
 
 
@@ -292,6 +327,8 @@ def status_one(name: str) -> dict:
         detail = probe_redis(port)
     elif cfg["probe"] == "ssti":
         detail = probe_ssti(port)
+    elif cfg["probe"] == "ssti_gen":
+        detail = probe_ssti_gen(port)
     else:
         detail = probe_http(port)
     return {"id": cid, "name": name, "state": "UP", "detail": f"{port} · {detail}", "pid": pid}
@@ -323,6 +360,7 @@ def resolve(names: list[str]) -> list[str]:
 BUILDABLE = {
     "rocketmq": ("rocketmq-dashboard", "c4-rocketmq-dashboard-1.0.0.jar", "rocketmq"),
     "jmreport": ("jmreport-ssti", "c4-jmreport-ssti-1.0.0.jar", "jmreport"),
+    "gen": ("ruoyi-gen-ssti", "c4-ruoyi-gen-ssti-1.0.0.jar", "gen"),
 }
 
 

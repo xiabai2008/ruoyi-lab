@@ -1,0 +1,17 @@
+server:
+  port: 19082
+
+spring:
+  application:
+    name: c4-ruoyi-gen-ssti
+  freemarker:
+    # 关闭缓存：模板是每次请求现编译的字符串，缓存无意义
+    cache: false
+    charset: UTF-8
+    # 本靶场只用 Freemarker 做字符串渲染，不挂视图解析器
+    enabled: true
+    template-loader-path: classpath:/templates/
+
+logging:
+  level:
+    root: INFO
