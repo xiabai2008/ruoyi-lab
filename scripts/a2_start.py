@@ -23,8 +23,8 @@ STATE_DIR = os.path.join(ROOT, ".state")
 BUILD_DIR = os.path.join(ROOT, "build", "A2")
 JAR = os.path.join(BUILD_DIR, "ruoyi-admin.jar")
 PIDFILE = os.path.join(STATE_DIR, "A2.pid")
-JDK8 = r"D:\develop\java-se-8u44-ri"
-JAVA = os.path.join(JDK8, "bin", "java.exe")
+JDK8_HOME = __import__("labenv").JDK8_HOME
+JAVA = os.path.join(JDK8_HOME, "bin", "java.exe")
 BACKEND_PORT = 19241
 NGINX_PORT = 19341
 NGINX_DIR = os.path.join(ROOT, "nginx")
@@ -206,8 +206,8 @@ def start():
     env = dict(os.environ)
     for key in ("SERVER_PORT", "SERVER__PORT"):
         env.pop(key, None)
-    env["JAVA_HOME"] = JDK8
-    env["PATH"] = os.path.join(JDK8, "bin") + os.pathsep + env.get("PATH", "")
+    env["JAVA_HOME"] = JDK8_HOME
+    env["PATH"] = os.path.join(JDK8_HOME, "bin") + os.pathsep + env.get("PATH", "")
 
     log = os.path.join(LOG_DIR, "run.log")
     err = os.path.join(LOG_DIR, "run.err.log")

@@ -20,7 +20,7 @@ RUN_DIR = os.path.join(ROOT, "runtime", "C3")
 LOG_DIR = os.path.join(RUN_DIR, "logs")
 STATE_DIR = os.path.join(ROOT, ".state")
 PIDFILE = os.path.join(STATE_DIR, "C3.pid")
-PYTHON = r"D:\tools\Python 3.12.9\python.exe"
+PYTHON = __import__("labenv").PYTHON
 PORT = 19331
 FLAGS = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
 

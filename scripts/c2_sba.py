@@ -17,8 +17,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUN_DIR = os.path.join(ROOT, "runtime", "C2", "sba")
 LOG_DIR = os.path.join(RUN_DIR, "logs")
 STATE_DIR = os.path.join(ROOT, ".state")
-JDK17 = r"D:\develop\jdk-17.0.0.1"
-JAVA = os.path.join(JDK17, "bin", "java.exe")
+JDK17_HOME = __import__("labenv").JDK17_HOME
+JAVA = os.path.join(JDK17_HOME, "bin", "java.exe")
 SERVER_PORT = 19311
 CLIENT_PORT = 19312
 SERVER_JAR = os.path.join(RUN_DIR, "sba-server.jar")
@@ -112,8 +112,8 @@ def spawn(jar, port, pidfile, logname):
     # 不清掉会劫持端口，导致启动到随机端口或直接 PortInUse。
     for key in ("SERVER_PORT", "SERVER__PORT"):
         env.pop(key, None)
-    env["JAVA_HOME"] = JDK17
-    env["PATH"] = os.path.join(JDK17, "bin") + os.pathsep + env.get("PATH", "")
+    env["JAVA_HOME"] = JDK17_HOME
+    env["PATH"] = os.path.join(JDK17_HOME, "bin") + os.pathsep + env.get("PATH", "")
     with open(log, "ab") as out:
         proc = subprocess.Popen(
             [JAVA, "-Xms128m", "-Xmx384m", "-Dfile.encoding=UTF-8", "-jar", jar, "--server.port=%d" % port],

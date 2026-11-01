@@ -46,7 +46,7 @@ echo [OK] %SITE% stopped (pid %APPPID%)
 exit /b 0
 
 :stop_r8
-set "PYTHON=D:\tools\Python 3.12.9\python.exe"
+if "%LAB_PYTHON%"=="" (set "PYTHON=D:\tools\Python 3.12.9\python.exe") else (set "PYTHON=%LAB_PYTHON%")
 if not exist "%PYTHON%" set "PYTHON=python"
 "%PYTHON%" "%CD%\scripts\start_r8_cloud.py" stop
 exit /b %ERRORLEVEL%

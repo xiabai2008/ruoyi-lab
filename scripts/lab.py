@@ -60,9 +60,34 @@ STATE_DIR = os.path.join(ROOT, ".state")
 SCRIPTS = os.path.join(ROOT, "scripts")
 NGINX_DIR = os.path.join(ROOT, "nginx")
 
-MYSQLD = r"C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqld.exe"
-MYSQL_INI = r"C:/Users/HZR/ry_r2_mysql/my.ini"
-REDIS_DIR = os.path.join(ROOT, "tools", "redis")
+# 外部依赖路径。都可以用环境变量覆盖，方便在不同机器上跑：
+#   LAB_MYSQLD     mysqld.exe 的绝对路径
+#   LAB_MYSQL_INI  MySQL 实例的 my.ini
+#   LAB_REDIS_DIR  redis-server.exe 所在目录
+#
+# ⚠ MYSQL_INI 必须是 **ASCII 路径**：本项目目录含中文，mysqld 的 --defaults-file
+#   拿到中文路径会直接起不来（实测）。Windows 上用 junction 或 symlink 指到纯英文路径。
+MYSQLD = os.environ.get("LAB_MYSQLD", r"C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqld.exe")
+
+
+def _find_mysql_ini() -> str:
+    """找一个可用的 my.ini：环境变量 > 项目内 > 本机 ASCII 路径。"""
+    env = os.environ.get("LAB_MYSQL_INI")
+    if env:
+        return env
+    candidates = [
+        os.path.join(ROOT, "mysql", "my.ini"),
+        # 历史位置：为绕开中文路径建的 junction 目标
+        os.path.expanduser("~/ry_r2_mysql/my.ini"),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return candidates[0]
+
+
+MYSQL_INI = _find_mysql_ini()
+REDIS_DIR = os.environ.get("LAB_REDIS_DIR", os.path.join(ROOT, "tools", "redis"))
 
 FLAGS = 0
 if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):

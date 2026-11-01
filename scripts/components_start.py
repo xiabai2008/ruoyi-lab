@@ -20,8 +20,8 @@ import urllib.error
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-JDK17 = r"D:\develop\jdk-17.0.0.1"
-JAVA = os.path.join(JDK17, "bin", "java.exe")
+JDK17_HOME = __import__("labenv").JDK17_HOME
+JAVA = os.path.join(JDK17_HOME, "bin", "java.exe")
 STATE_DIR = os.path.join(ROOT, ".state")
 
 FLAGS = 0
@@ -185,8 +185,8 @@ def start_one(name):
         return False
 
     env = dict(os.environ)
-    env["JAVA_HOME"] = JDK17
-    env["PATH"] = os.path.join(JDK17, "bin") + os.pathsep + env.get("PATH", "")
+    env["JAVA_HOME"] = JDK17_HOME
+    env["PATH"] = os.path.join(JDK17_HOME, "bin") + os.pathsep + env.get("PATH", "")
     env.pop("SERVER_PORT", None)
     env.pop("SERVER__PORT", None)
 

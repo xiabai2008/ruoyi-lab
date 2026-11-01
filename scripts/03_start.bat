@@ -5,8 +5,8 @@ cd /d "%~dp0.."
 set "SITE=%~1"
 if "%SITE%"=="" set "SITE=R2"
 
-set "JDK8=D:\develop\java-se-8u44-ri"
-set "JDK17=D:\develop\jdk-17.0.0.1"
+if "%LAB_JDK8%"=="" (set "JDK8=D:\develop\java-se-8u44-ri") else (set "JDK8=%LAB_JDK8%")
+if "%LAB_JDK17%"=="" (set "JDK17=D:\develop\jdk-17.0.0.1") else (set "JDK17=%LAB_JDK17%")
 set "PORT="
 set "JAVA_HOME="
 
@@ -81,7 +81,7 @@ echo [INFO] Starting %SITE% via scripts\launch.py
 rem Launch through the Python launcher instead of start /B: a start /B child
 rem inherits this script stdout handle, so the caller pipe never closes and the
 rem caller hangs for 15+ minutes. Python subprocess uses close_fds=True.
-set "PYTHON=D:\tools\Python 3.12.9\python.exe"
+if "%LAB_PYTHON%"=="" (set "PYTHON=D:\tools\Python 3.12.9\python.exe") else (set "PYTHON=%LAB_PYTHON%")
 if not exist "%PYTHON%" set "PYTHON=python"
 "%PYTHON%" "%CD%\scripts\launch.py" %SITE%
 if errorlevel 1 (
@@ -123,7 +123,7 @@ exit /b 0
 
 :start_r8
 echo [INFO] Starting R8 cloud stack (Nacos + 6 microservices) via scripts\start_r8_cloud.py
-set "PYTHON=D:\tools\Python 3.12.9\python.exe"
+if "%LAB_PYTHON%"=="" (set "PYTHON=D:\tools\Python 3.12.9\python.exe") else (set "PYTHON=%LAB_PYTHON%")
 if not exist "%PYTHON%" set "PYTHON=python"
 "%PYTHON%" "%CD%\scripts\start_r8_cloud.py" start
 if errorlevel 1 (

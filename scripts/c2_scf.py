@@ -16,8 +16,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUN_DIR = os.path.join(ROOT, "runtime", "C2", "scf")
 LOG_DIR = os.path.join(RUN_DIR, "logs")
 STATE_DIR = os.path.join(ROOT, ".state")
-JDK17 = r"D:\develop\jdk-17.0.0.1"
-JAVA = os.path.join(JDK17, "bin", "java.exe")
+JDK17_HOME = __import__("labenv").JDK17_HOME
+JAVA = os.path.join(JDK17_HOME, "bin", "java.exe")
 JAR = os.path.join(RUN_DIR, "scf.jar")
 PIDFILE = os.path.join(STATE_DIR, "C2-scf.pid")
 PORT = 19314
@@ -104,8 +104,8 @@ def start():
     # 不清掉会劫持端口，导致启动到随机端口或直接 PortInUse。
     for key in ("SERVER_PORT", "SERVER__PORT"):
         env.pop(key, None)
-    env["JAVA_HOME"] = JDK17
-    env["PATH"] = os.path.join(JDK17, "bin") + os.pathsep + env.get("PATH", "")
+    env["JAVA_HOME"] = JDK17_HOME
+    env["PATH"] = os.path.join(JDK17_HOME, "bin") + os.pathsep + env.get("PATH", "")
     log = os.path.join(LOG_DIR, "scf-console.log")
     with open(log, "ab") as out:
         proc = subprocess.Popen(

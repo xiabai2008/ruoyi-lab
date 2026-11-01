@@ -13,22 +13,26 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# 外部依赖路径统一由 labenv 解析（环境变量 LAB_* > lab.local.json > 默认值）
+from labenv import JDK8_HOME, JDK17_HOME  # noqa: E402
+
 # site -> (port, jdk_home)
 SITES = {
-    "R1": (19201, r"D:\develop\java-se-8u44-ri"),
-    "R2": (19202, r"D:\develop\java-se-8u44-ri"),
-    "R3": (19203, r"D:\develop\java-se-8u44-ri"),
-    "R4": (19204, r"D:\develop\java-se-8u44-ri"),
-    "R5": (19205, r"D:\develop\jdk-17.0.0.1"),
-    # RuoYi-Vue v3.9.2 / v3.8.9 的 tag 已于 2026-03-26 被若依重新发布到 Spring Boot 4.0.3，
+    "R1": (19201, JDK8_HOME),
+    "R2": (19202, JDK8_HOME),
+    "R3": (19203, JDK8_HOME),
+    "R4": (19204, JDK8_HOME),
+    # R5 用 JDK17（4.8.3 起要求 Java 8+，但本机以 17 编译运行）
+    "R5": (19205, JDK17_HOME),
+    # RuoYi-Vue v3.9.2 的 tag 已于 2026-03-26 被若依重新发布到 Spring Boot 4.0.3，
     # 编译与运行都需要 JDK 17（不再是 2023 年的 Spring Boot 2.5 + JDK 8）
-    "R6": (19206, r"D:\develop\jdk-17.0.0.1"),
+    "R6": (19206, JDK17_HOME),
     # R7 tag v3.8.9 是 2024-12-30 的原版（Spring Boot 2.5.15 / Java 8），不是 2026 重发布版，用 JDK8
-    "R7": (19207, r"D:\develop\java-se-8u44-ri"),
-    "R8": (19208, r"D:\develop\jdk-17.0.0.1"),
-    "R9": (19209, r"D:\develop\jdk-17.0.0.1"),
-    "R10": (19210, r"D:\develop\java-se-8u44-ri"),
-    "R11": (19211, r"D:\develop\jdk-17.0.0.1"),
+    "R7": (19207, JDK8_HOME),
+    "R8": (19208, JDK17_HOME),
+    "R9": (19209, JDK17_HOME),
+    "R10": (19210, JDK8_HOME),
+    "R11": (19211, JDK17_HOME),
 }
 
 # 各站点产物名不同（R9 Plus / R10 JeecgBoot / R11 自建 Spring Boot）

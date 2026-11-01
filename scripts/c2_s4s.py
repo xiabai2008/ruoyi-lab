@@ -19,7 +19,7 @@ LOG_DIR = os.path.join(RUN_DIR, "logs")
 STATE_DIR = os.path.join(ROOT, ".state")
 TOMCAT = os.path.join(ROOT, "tools", "tomcat-9.0.58-s4s")
 CATALINA = os.path.join(TOMCAT, "bin", "catalina.bat")
-JDK17 = r"D:\develop\jdk-17.0.0.1"
+JDK17_HOME = __import__("labenv").JDK17_HOME
 PORT = 19313
 WAR_SRC = os.path.join(RUN_DIR, "ROOT.war")
 WAR_DST = os.path.join(TOMCAT, "webapps", "ROOT.war")
@@ -122,10 +122,10 @@ def start():
     # 不清掉会劫持端口，导致启动到随机端口或直接 PortInUse。
     for key in ("SERVER_PORT", "SERVER__PORT"):
         env.pop(key, None)
-    env["JAVA_HOME"] = JDK17
+    env["JAVA_HOME"] = JDK17_HOME
     env["CATALINA_HOME"] = TOMCAT
     env["CATALINA_BASE"] = TOMCAT
-    env["PATH"] = os.path.join(JDK17, "bin") + os.pathsep + env.get("PATH", "")
+    env["PATH"] = os.path.join(JDK17_HOME, "bin") + os.pathsep + env.get("PATH", "")
     log = os.path.join(LOG_DIR, "tomcat-console.log")
     with open(log, "ab") as out:
         proc = subprocess.Popen(

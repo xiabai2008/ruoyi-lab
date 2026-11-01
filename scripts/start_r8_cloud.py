@@ -37,14 +37,14 @@ LOG_DIR = os.path.join(RUN_DIR, "logs")
 BUILD_DIR = os.path.join(ROOT, "build", "R8")
 TOOLS_DIR = os.path.join(ROOT, "tools")
 
-JDK17_HOME = r"D:\develop\jdk-17.0.0.1"
-JDK8_HOME = r"D:\develop\java-se-8u44-ri"
+JDK17_HOME = __import__("labenv").JDK17_HOME
+JDK8_HOME = __import__("labenv").JDK8_HOME
 JAVA17 = os.path.join(JDK17_HOME, "bin", "java.exe")
 JAVA8 = os.path.join(JDK8_HOME, "bin", "java.exe")
 
 NACOS_CONTAINER = "nacos-ruoyi-r8"
 # 官方 tag v3.6.8（2026-03-30 重发）的 docker/docker-compose.yml 指定 nacos/nacos-server:v3.0.2，
-# 对应 JDK17 / Spring Boot 4.0.3 / SCA 2025.1.0.0（nacos-client 3.1.1）。Nacos 3.x 控制台在 8080，8848 只做 API。
+# 对应 JDK17_HOME / Spring Boot 4.0.3 / SCA 2025.1.0.0（nacos-client 3.1.1）。Nacos 3.x 控制台在 8080，8848 只做 API。
 NACOS_IMAGE = "nacos/nacos-server:v3.0.2"
 NACOS_HOME = os.path.join(TOOLS_DIR, "nacos")
 NACOS_ZIP_CANDIDATES = [
@@ -332,7 +332,7 @@ def patch_nacos_properties():
 
 def start_nacos_zip():
     if not os.path.isfile(JAVA17):
-        raise RuntimeError("找不到 JDK17: %s（Nacos 3.x 需要 JDK17）" % JAVA17)
+        raise RuntimeError("找不到 JDK17_HOME: %s（Nacos 3.x 需要 JDK17_HOME）" % JAVA17)
     patch_nacos_properties()
     out = open(os.path.join(LOG_DIR, "nacos.out.log"), "ab")
     err = open(os.path.join(LOG_DIR, "nacos.err.log"), "ab")
