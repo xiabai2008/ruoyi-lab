@@ -1,0 +1,50 @@
+# ── 不纳入版本控制：可重建的产物与巨量二进制 ──
+# src/ 是各站上游源码检出（4.9G），build/ 是构建产物（1.8G），
+# runtime/ 是运行目录与前端部署（2.2G），全部可由 tag + 构建脚本重建。
+src/
+build/
+runtime/
+mysql/
+tools/
+.m2/
+certs/
+
+# nginx：只跟踪本站点自己写的反向代理配置与错误页；
+# nginx.exe 二进制、官方 conf/contrib/docs、日志、临时目录都不该进版本控制。
+nginx/*
+!nginx/conf.d/
+!nginx/html/
+nginx/logs/
+nginx/temp/
+
+# 扫描结果（属于 ruoyi-scan 的 artifacts，不放进靶场仓库）
+reports_a2/
+reports_c2/
+reports_c3/
+reports_d1/
+
+# ── 运行时状态：pid / 日志 / 临时文件 ──
+.state/*.pid
+.state/*.status.json
+.state/*.log
+*.pid
+*.log
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# ── 编辑器 / 系统 ──
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ── 靶场运行时的临时校验文件 ──
+_seed_*.tmp
+*.tmp

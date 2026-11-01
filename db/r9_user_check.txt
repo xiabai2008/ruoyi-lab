@@ -1,0 +1,4 @@
+user_id	user_name	dept_id
+1	admin	1001
+tenant_id
+000000

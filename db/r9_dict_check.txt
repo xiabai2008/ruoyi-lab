@@ -1,0 +1,28 @@
+role_id	role_name	role_key
+1	瓒呯骇绠＄悊鍛?superadmin
+3	鏈儴闂ㄥ強浠ヤ笅	test1
+4	浠呮湰浜?test2
+200	閮ㄩ棬涓荤	dept_manager
+201	宸℃鍛?inspector
+202	鍙鐢ㄦ埛	viewer
+count(*)
+0
+dict_type	dict_label	dict_value
+insp_defect_level	涓€鑸?1
+insp_defect_level	閲嶈	2
+insp_defect_level	绱ф€?3
+insp_defect_status	寰呭鐞?0
+insp_defect_status	澶勭悊涓?1
+insp_defect_status	宸查棴鐜?2
+insp_device_type	閿呯倝	01
+insp_device_type	姹借疆鏈?02
+insp_device_type	鍙戠數鏈?03
+insp_device_type	鍙樺帇鍣?04
+insp_device_type	缁欐按娉?05
+insp_device_type	椋庢満	06
+insp_device_type	纾ㄧ叅鏈?07
+insp_device_type	鎹㈢儹璁惧	08
+insp_device_type	杈撶叅璁惧	09
+insp_device_type	鐜繚璁惧	10
+insp_result	姝ｅ父	0
+insp_result	寮傚父	1

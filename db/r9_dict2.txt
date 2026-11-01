@@ -1,0 +1,9 @@
+dict_type	dict_label	dict_value	css_class	list_class	is_default
+insp_result	姝ｅ父	0	NULL	success	N
+insp_result	寮傚父	1	NULL	danger	N
+insp_defect_level	涓€鑸?1	NULL	info	N
+insp_defect_level	閲嶈	2	NULL	warning	N
+insp_defect_level	绱ф€?3	NULL	danger	N
+insp_defect_status	寰呭鐞?0	NULL	warning	N
+insp_defect_status	澶勭悊涓?1	NULL	primary	N
+insp_defect_status	宸查棴鐜?2	NULL	success	N

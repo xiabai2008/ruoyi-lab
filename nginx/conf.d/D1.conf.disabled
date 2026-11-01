@@ -1,0 +1,25 @@
+server {
+    listen 19321;
+    server_name 127.0.0.1;
+    client_max_body_size 100m;
+
+    access_log logs/D1_access.log main;
+
+    # 站点根：真人访问 / 应该看到登录页，而不是 404
+    location = / {
+        return 302 /portal/;
+    }
+    location = /portal {
+        return 302 /portal/;
+    }
+
+    # 带 context-path 的应用入口：原样转发，不做 URI 重写
+    location /portal/ {
+        proxy_pass http://127.0.0.1:19221;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Port $server_port;
+    }
+}

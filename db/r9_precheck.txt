@@ -1,0 +1,9 @@
+dept_id	dept_name
+1000	鍗庣數鐭冲搴勭儹鐢垫湁闄愬叕鍙?
+rm
+0
+TABLE_NAME
+insp_defect
+insp_device
+insp_plan
+insp_record
