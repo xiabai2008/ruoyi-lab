@@ -124,6 +124,12 @@ def main() -> int:
     profile = PROFILES.get(site, "druid,prod")
     if profile:
         cmd.append("--spring.profiles.active=%s" % profile)
+    # 单机版若依的 ruoyi.profile 默认是相对路径 ./profile；Tomcat 的
+    # MultipartFile.transferTo(相对路径) 会按容器临时目录解析，上传目标目录不存在时
+    # 直接 500（2026-11-02 R2 实测：FileNotFoundException ...tomcat.19202.xxx/work/...）。
+    # 启动时显式传绝对路径，使上传/下载目录固定落在 runtime/<site>/profile。
+    if site != "R8":
+        cmd.append("--ruoyi.profile=%s" % os.path.join(rundir, "profile").replace(os.sep, "/"))
     # R10 漏洞演示模式：--lab.mode 既等价于 -Dlab.mode，走 Spring 环境属性，默认 safe
     if site == "R10" and lab_mode:
         cmd.append("--lab.mode=%s" % lab_mode)
