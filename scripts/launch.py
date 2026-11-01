@@ -72,6 +72,20 @@ def main() -> int:
     err = os.path.join(rundir, "run.err.log")
     java = os.path.join(jdk, "bin", "java.exe")
 
+    # 启动前截断 run.log：这里是 **stdout 全量重定向**，没有 logback 的滚动策略保护。
+    # 实测 R1 累积到 649MB、R5 到 336MB —— 若依 4.5.1 的 Druid statViewServlet 在
+    # login-username 为空时（官方默认配置）每个 /druid/* 请求都抛 NullPointerException，
+    # 单次目录扫描能打出 8 万个栈。日志撑爆磁盘还会把真问题淹没。
+    # 保留上一轮为 run.log.prev，方便回溯"上次为什么崩"，但不无限累积。
+    if os.path.exists(log) and os.path.getsize(log) > 0:
+        prev = log + ".prev"
+        try:
+            os.replace(log, prev)
+        except OSError:
+            pass  # 进程还占着句柄时删不掉，直接清空即可
+    with open(log, "wb"):
+        pass
+
     env = dict(os.environ)
     env["JAVA_HOME"] = jdk
     env["PATH"] = os.path.join(jdk, "bin") + os.pathsep + env.get("PATH", "")

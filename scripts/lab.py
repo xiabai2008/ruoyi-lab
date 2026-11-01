@@ -97,8 +97,10 @@ SITES: dict[str, dict] = {
     "R3":  {"group": "site", "entry": 19103, "backend": 19203, "probe": ("/login", {200, 302}), "pidfile": "R3.pid"},
     "R4":  {"group": "site", "entry": 19104, "backend": 19204, "probe": ("/login", {200, 302}), "pidfile": "R4.pid"},
     "R5":  {"group": "site", "entry": 19105, "backend": 19205, "probe": ("/login", {200, 302}), "pidfile": "R5.pid"},
-    # 分离版：/captchaImage 会返回 JSON（`{"code":200,...}`），比根路径更能证明后端活着
-    "R6":  {"group": "site", "entry": 19106, "backend": 19206, "probe": ("/captchaImage", {200}), "pidfile": "R6.pid"},
+    # 分离版：必须探 /prod-api/ 前缀下的接口，根路径是 SPA 兜底（200 + index.html）。
+    # 2026-11-01 移除了 R6 的「运维便利映射」后，根路径 /captchaImage 也走 SPA 兜底，
+    # 探它会拿到 200 假阳性 —— 这正是"看着 UP 实际没连到后端"的坑。
+    "R6":  {"group": "site", "entry": 19106, "backend": 19206, "probe": ("/prod-api/captchaImage", {200}), "pidfile": "R6.pid"},
     "R7":  {"group": "site", "entry": 19107, "backend": 19207, "probe": ("/prod-api/captchaImage", {200}), "pidfile": "R7.pid"},
     "R8":  {"group": "site", "entry": 19108, "backend": 19208, "probe": ("/", {200, 302, 401}), "pidfile": "R8.pid",
             "cloud": True},
@@ -173,6 +175,33 @@ def http_code(url: str, timeout: float = 4.0) -> int:
         return 0
 
 
+def http_probe(url: str, timeout: float = 4.0) -> tuple[int, str, bytes]:
+    """返回 (状态码, Content-Type, 响应体前 256 字节)。
+
+    比 http_code 多返回内容 —— 分离版站点的 SPA 兜底对任意路径都返 200 HTML，
+    只看状态码无法区分「真连到后端」和「打到了前端页面」。
+    """
+    req = urllib.request.Request(url, headers={"User-Agent": "ruoyi-lab/1.0"})
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **kw):  # noqa: D102 - 故意不跟随
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect)
+    try:
+        with opener.open(req, timeout=timeout) as resp:
+            body = resp.read(256)
+            return resp.status, (resp.headers.get("Content-Type") or "").lower(), body
+    except urllib.error.HTTPError as exc:
+        try:
+            body = exc.read(256)
+        except Exception:
+            body = b""
+        return exc.code, (exc.headers.get("Content-Type") or "").lower(), body
+    except Exception:
+        return 0, "", b""
+
+
 def read_pid(name: str) -> int | None:
     pf = SITES.get(name, {}).get("pidfile")
     if not pf:
@@ -239,11 +268,21 @@ def check(name: str) -> dict:
 
     if probe:
         path, expect = probe
-        code = http_code(f"http://127.0.0.1:{entry}{path}")
+        code, ctype, body = http_probe(f"http://127.0.0.1:{entry}{path}")
         if code not in expect:
             return {
                 "name": name, "state": "DEGRADED",
                 "detail": f"{' '.join(detail_parts)} 探针{path}={code}（期望{sorted(expect)}）", "pid": pid,
+            }
+        # 分离版站点（探针走 /prod-api、/jeecg-boot 这类 API 前缀）如果返回 HTML，
+        # 说明打到的不是后端，而是 SPA 的 try_files 兜底页 —— 那只证明 Nginx 活着。
+        # 单机版（探针是 /login）本来就该返回 HTML 登录页，不能套同一个判据。
+        is_api_probe = any(path.startswith(p) for p in ("/prod-api", "/jeecg-boot", "/api/"))
+        if is_api_probe and "json" not in ctype and b"<html" in body[:200].lower():
+            return {
+                "name": name, "state": "DEGRADED",
+                "detail": f"{' '.join(detail_parts)} 探针{path}={code} 但返回 HTML（SPA 兜底，未连到后端）",
+                "pid": pid,
             }
         detail_parts.append(f"{path}={code}")
 
@@ -548,6 +587,75 @@ def cmd_down(names: list[str]) -> int:
     return 0 if not failed else 1
 
 
+# run.log 是 stdout 全量重定向，没有 logback 滚动策略保护。
+# 实测 R1 累积到 649MB、R5 到 336MB —— 若依 4.5.1 的 Druid statViewServlet 在
+# login-username 为空时（官方默认配置）每个 /druid/* 请求都抛 NPE，单次目录扫描
+# 能打出 8 万个栈。超过这个阈值就该清理，否则会撑爆磁盘并淹没真问题。
+LOG_WARN_MB = 100
+
+
+def cmd_logs(names: list[str]) -> int:
+    """报告各站 run.log 体积，超过阈值给出清理建议。"""
+    targets = resolve(names) if names else [n for n in ALL if not n.startswith("infra:")]
+    rows = []
+    for n in targets:
+        path = os.path.join(ROOT, "runtime", n, "run.log")
+        if not os.path.exists(path):
+            continue
+        mb = os.path.getsize(path) / (1024 * 1024)
+        rows.append((n, mb, path))
+    if not rows:
+        print("[OK] 没有找到任何 run.log")
+        return 0
+
+    rows.sort(key=lambda r: -r[1])
+    total = sum(r[1] for r in rows)
+    print()
+    print(f"{'站点':<8} {'run.log':>10}")
+    print("-" * 40)
+    over = []
+    for n, mb, path in rows:
+        flag = "  << 超阈值" if mb > LOG_WARN_MB else ""
+        if mb > LOG_WARN_MB:
+            over.append((n, path))
+        print(f"{n:<8} {mb:>8.1f} MB{flag}")
+    print("-" * 40)
+    print(f"合计 {total:.1f} MB")
+
+    if over:
+        print(f"\n[提示] {len(over)} 座站超过 {LOG_WARN_MB}MB。清理：")
+        print("       python scripts\\lab.py clean-logs")
+        return 1
+    return 0
+
+
+def cmd_clean_logs(names: list[str]) -> int:
+    """清空超阈值的 run.log（保留 .prev 一份供回溯）。"""
+    targets = resolve(names) if names else [n for n in ALL if not n.startswith("infra:")]
+    freed = 0.0
+    for n in targets:
+        path = os.path.join(ROOT, "runtime", n, "run.log")
+        if not os.path.exists(path):
+            continue
+        mb = os.path.getsize(path) / (1024 * 1024)
+        if mb <= LOG_WARN_MB:
+            continue
+        try:
+            os.replace(path, path + ".prev")
+        except OSError:
+            pass
+        try:
+            with open(path, "wb"):
+                pass
+        except OSError as exc:
+            print(f"[FAIL] {n}: {exc}")
+            continue
+        freed += mb
+        print(f"[OK] {n}: 清空 {mb:.1f} MB（上一轮留在 run.log.prev）")
+    print(f"\n[OK] 共释放 {freed:.1f} MB" if freed else "[OK] 无需清理")
+    return 0
+
+
 def cmd_clean(quiet: bool = False) -> int:
     """删除「PID 文件在但进程已死」的残留，避免后续误判站点在跑。"""
     removed = []
@@ -636,6 +744,10 @@ def main() -> int:
         return cmd_down(names)
     if cmd == "clean":
         return cmd_clean()
+    if cmd == "logs":
+        return cmd_logs(names)
+    if cmd == "clean-logs":
+        return cmd_clean_logs(names)
     if cmd == "manifest":
         return cmd_manifest()
     if cmd == "urls":

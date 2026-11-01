@@ -44,6 +44,13 @@ ASSETS: dict[str, list[tuple[str, str, str]]] = {
             "运维遗留的建库脚本（/docs/** 在 Shiro 匿名清单里，所以真实可匿名下载）",
         ),
     ],
+    "R6": [
+        (
+            "R6-ui-dotgit",
+            os.path.join("ui", ".git"),
+            "前端构建时漏删的 .git（Nginx 根路径直出静态文件，匿名可读）",
+        ),
+    ],
     "R7": [
         (
             "R7-ui-dotgit",
