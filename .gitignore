@@ -9,6 +9,11 @@ tools/
 .m2/
 certs/
 
+# 真实感资产（诱饵/遗留文件）放在顶层 lab_assets/ 里跟踪，由 scripts/lab_assets.py
+# 铺到 runtime/ 下。不直接跟踪 runtime/ 的原因：R7 的诱饵是 .git 目录，
+# 放进 runtime/ 会被 git 当成 submodule（"adding embedded git repository"），
+# 而且 runtime/ 是可重建的产物目录，混入人为资产会让"重建"语义变模糊。
+
 # nginx：只跟踪本站点自己写的反向代理配置与错误页；
 # nginx.exe 二进制、官方 conf/contrib/docs、日志、临时目录都不该进版本控制。
 nginx/*

@@ -397,6 +397,18 @@ def start_site(name: str) -> bool:
         if not start_site(dep):
             return False
 
+    # 真实感资产（遗留 SQL、漏删的 .git）在启动前铺好。
+    # 放在启动前而不是启动后：R7 的 .git 是 Nginx 直接读的静态文件，不需要重启就生效；
+    # 而 R1 的 static-extra 由 Spring 挂载，启动时扫描目录，必须提前就位。
+    try:
+        if SCRIPTS not in sys.path:
+            sys.path.insert(0, SCRIPTS)
+        import lab_assets
+
+        lab_assets.apply(name, verbose=False)
+    except Exception as exc:  # 资产铺设失败不该阻断站点启动
+        print(f"[WARN] {name} 真实感资产铺设失败: {exc}")
+
     # 云站点交给专用脚本
     if cfg.get("cloud"):
         print(f"[..] {name} 是微服务站点，交给 start_r8_cloud.py")
