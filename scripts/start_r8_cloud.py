@@ -568,20 +568,32 @@ def _pid_site_map():
 
 
 def top_java_processes(limit=8):
-    """返回 RSS 最高的 java 进程 [(pid, rss_mb, site)]；仅用于提示。"""
+    """返回 RSS 最高的 java 进程 [(pid, rss_mb, site, is_lab)]；仅用于提示。
+
+    is_lab 区分「靶场进程」与「外部 java」（VS Code 语言服务器 / IDEA / 其他服务）。
+    这个区分很重要：预检失败时如果只笼统说「内存不足」，用户会去停靶场，
+    而真正的大户可能是 IDE —— 实测本机 VS Code Java 语言服务器常驻 1.2GB，
+    比任何一个靶场站点都大。
+    """
     try:
         import psutil
     except Exception:
         return []
     sites = _pid_site_map()
     rows = []
-    for proc in psutil.process_iter(["pid", "name", "memory_info"]):
+    for proc in psutil.process_iter(["pid", "name", "memory_info", "cmdline"]):
         try:
             name = (proc.info.get("name") or "").lower()
             if "java" not in name:
                 continue
             rss = proc.info["memory_info"].rss / (1024 * 1024)
-            rows.append((proc.info["pid"], rss, sites.get(proc.info["pid"], "")))
+            pid = proc.info["pid"]
+            site = sites.get(pid, "")
+            if not site:
+                # 没在 .state/*.pid 里 → 不是由靶场脚本拉起的
+                cmd = " ".join(proc.info.get("cmdline") or [])[:200].lower()
+                site = "外部 java（非靶场）" if "ruoyi" not in cmd and "c4-" not in cmd else "未登记靶场进程"
+            rows.append((pid, rss, site, bool(sites.get(pid))))
         except Exception:
             continue
     rows.sort(key=lambda item: item[1], reverse=True)
@@ -589,17 +601,36 @@ def top_java_processes(limit=8):
 
 
 def memory_precheck(required_mb=3200, available_mb=None):
-    """内存不足时打印原因并返回 2；不启动、不杀任何进程。"""
+    """内存不足时打印原因并返回 2；不启动、不杀任何进程。
+
+    R8 是 RuoYi-Cloud：Nacos + 6 个 Spring Cloud 服务，共 7 个 JVM。
+    堆上限合计 2496MB + Metaspace 1216MB + Nacos 约 512MB ≈ 4.2GB，
+    所以它**无法与其他靶场共存**（本机 16GB，典型靶场占用 1.5–2GB）。
+
+    因此 R8 走独占模式：需要时停掉其他站点单独拉起，用完即停。
+    """
     required_mb = int(os.environ.get("R8_MIN_FREE_MB", required_mb))
     avail = available_memory_mb() if available_mb is None else int(available_mb)
     if avail >= required_mb:
         return 0
     log("[FAIL] 可用内存 %.1fGB，R8 需要 ≥%.1fGB。" % (avail / 1024.0, required_mb / 1024.0))
-    log("       请先停掉部分站点（例如 python scripts\\launch.py 不支持 stop，用 .state\\R*.pid + taskkill /PID）")
-    log("       当前占用最高的 java：")
-    log("       PID  RSS(MB)  站点")
-    for pid, rss, site in top_java_processes():
-        log("       %-4s %-8.1f %s" % (pid, rss, site))
+    log("       R8 = Nacos + 6 个 Spring Cloud 服务（共 7 个 JVM），约 4.2GB，")
+    log("       无法与其他靶场共存。走独占模式：")
+    log("         python scripts\\lab.py down site component middleware special")
+    log("         python scripts\\start_r8_cloud.py start")
+    rows = top_java_processes()
+    if rows:
+        log("       当前占用最高的 java：")
+        log("       PID  RSS(MB)  站点")
+        for pid, rss, site, is_lab in rows:
+            log("       %-4s %-8.1f %s" % (pid, rss, site))
+        lab_mb = sum(r for _p, r, _s, is_lab in rows if is_lab)
+        ext_mb = sum(r for _p, r, _s, is_lab in rows if not is_lab)
+        if ext_mb > 0:
+            log("")
+            log("       [提示] 其中有 %.0fMB 是**非靶场 java**（IDE 语言服务器等）。" % ext_mb)
+            log("              停靶场腾不出来这部分；需要的话请关掉对应 IDE 窗口。")
+            log("              靶场进程合计 %.0fMB。" % lab_mb)
     return 2
 
 

@@ -102,8 +102,11 @@ SITES: dict[str, dict] = {
     # 探它会拿到 200 假阳性 —— 这正是"看着 UP 实际没连到后端"的坑。
     "R6":  {"group": "site", "entry": 19106, "backend": 19206, "probe": ("/prod-api/captchaImage", {200}), "pidfile": "R6.pid"},
     "R7":  {"group": "site", "entry": 19107, "backend": 19207, "probe": ("/prod-api/captchaImage", {200}), "pidfile": "R7.pid"},
+    # R8 是 RuoYi-Cloud：Nacos + 6 个 Spring Cloud 服务 = 7 个 JVM，约 4.2GB。
+    # **无法与其他靶场共存**（本机 16GB，典型靶场占用 1.5–2GB），走独占模式。
+    # 详见 docs/R8/独占模式说明.md
     "R8":  {"group": "site", "entry": 19108, "backend": 19208, "probe": ("/", {200, 302, 401}), "pidfile": "R8.pid",
-            "cloud": True},
+            "cloud": True, "exclusive": True},
     "R9":  {"group": "site", "entry": 19109, "backend": 19209, "probe": ("/prod-api/auth/code", {200}), "pidfile": "R9.pid"},
     "R10": {"group": "site", "entry": 19110, "backend": 19210, "probe": ("/jeecg-boot/sys/randomImage/probe", {200}), "pidfile": "R10.pid"},
     "R11": {"group": "site", "entry": 19111, "backend": 19211, "probe": ("/api/v1/health", {200}), "pidfile": "R11.pid"},
@@ -505,11 +508,50 @@ def start_site(name: str) -> bool:
     return True
 
 
+def _exclusive_conflicts(targets: list[str]) -> list[str]:
+    """起独占站点（R8）前，检查有没有别的靶场在跑。
+
+    R8 要 ~4.2GB（7 个 JVM），无法与任何其他靶场共存。
+    不提前检查的话，start_r8_cloud.py 的内存预检会挡住，但提示里只会说
+    「内存不足」—— 用户可能以为是 IDE 占的，去关 IDE 而不是停靶场。
+    """
+    if not any(SITES.get(t, {}).get("exclusive") for t in targets):
+        return []
+    running = []
+    for name in ALL:
+        if name in targets or name.startswith("infra:"):
+            continue
+        # 只有后端进程真的在跑才占内存。DEGRADED（Nginx 在、后端已死）
+        # 和 DOWN 都不占 —— 把它们算成冲突会让提示里列一堆其实不占内存的站。
+        cfg = SITES[name]
+        backend = cfg.get("backend") or cfg["entry"]
+        if cfg.get("backend"):
+            alive = port_open(cfg["backend"])
+        else:
+            alive = port_open(cfg["entry"])
+        if alive:
+            running.append(name)
+    return running
+
+
 def cmd_up(names: list[str]) -> int:
     targets = resolve(names) if names else ALL
     # 先基础设施，再站点（顺序由 START_ORDER_HINT + SITES 定义保证）
     infra = [t for t in targets if t.startswith("infra:")]
     rest = [t for t in targets if not t.startswith("infra:")]
+
+    conflicts = _exclusive_conflicts(targets)
+    if conflicts:
+        print()
+        print("[!] 本次要起的站点里有**独占型**（R8 = 7 个 JVM 约 4.2GB），")
+        print("    但以下靶场还在运行，内存会不够：")
+        for c in conflicts:
+            print(f"      - {c}")
+        print("    先停掉它们：")
+        print("      python scripts\\lab.py down site component middleware special")
+        print("    或强制继续（不建议，R8 会因内存不足启动失败）：加 --force")
+        if "--force" not in sys.argv:
+            return 1
 
     # 只要起站点就隐含需要基础设施
     if rest:
