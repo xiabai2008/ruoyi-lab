@@ -114,6 +114,13 @@ SITES: dict[str, dict] = {
     "R12": {"group": "site", "entry": 19112, "backend": 19202, "probe": ("/login", {200, 302}), "pidfile": None,
             "depends": ["R2"]},
 
+    # R13 = 盲测 v2 的 hold-out 验证站（加固版 WAF）。
+    # ⚠ 不属于 site 分组 —— 常规启停不会拉起它，必须显式 `lab.py up R13`。
+    # 目的：阶段 4 用它证明「改进不是拟合」。盲测阶段 1 全程不碰 19113。
+    # 四类行为：特征拦截 / 扫描器 UA / 统一拒绝页 / 敏感路径假 200（测内容比对）
+    "R13": {"group": "holdout", "entry": 19113, "backend": 19202, "probe": ("/login", {200}), "pidfile": None,
+            "depends": ["R2"]},
+
     # ── C1 组件靶场（无 Nginx 前置，入口即后端）──
     "C1-1": {"group": "component", "entry": 19301, "backend": 0, "probe": ("/actuator/health", {200}), "pidfile": "C1-1-jolokia.pid"},
     "C1-2": {"group": "component", "entry": 19302, "backend": 0, "probe": ("/h2-console", {200, 302}), "pidfile": "C1-2-h2-console.pid"},
@@ -147,6 +154,8 @@ SITES: dict[str, dict] = {
 GROUPS = {
     "infra": ["infra:mysql", "infra:redis", "infra:nginx"],
     "site": [f"R{i}" for i in range(1, 13)],
+    # hold-out 站：只用于阶段 4 未污染验证，不参与常规启停与盲测矩阵
+    "holdout": ["R13"],
     "component": [k for k in SITES if k.startswith("C") and not k.startswith("C4-")],
     "middleware": [k for k in SITES if k.startswith("C4-")],
     "special": ["C3", "D1", "A2"],
@@ -475,6 +484,10 @@ def start_site(name: str) -> bool:
         comp = {"C1-1": "jolokia", "C1-2": "h2-console", "C1-3": "data-service", "C1-4": "config-server"}[name]
         return subprocess.call([sys.executable, os.path.join(SCRIPTS, "components_start.py"), comp], cwd=ROOT) == 0
 
+    # R13 hold-out（加固版 WAF）：靠 nginx conf 改名 + reload 启停
+    if name == "R13":
+        return subprocess.call([sys.executable, os.path.join(SCRIPTS, "r13_start.py"), "start"], cwd=ROOT) == 0
+
     # C4 中间件（Redis / MinIO / RocketMQ），由 c4_start.py 统一管理
     if name.startswith("C4-"):
         comp = {"C4-1": "redis", "C4-2": "minio", "C4-3": "rocketmq", "C4-4": "jmreport", "C4-5": "gen", "C4-6": "thymeleaf"}[name]
@@ -604,6 +617,8 @@ def cmd_down(names: list[str]) -> int:
             subprocess.call([sys.executable, os.path.join(SCRIPTS, "c2_s4s.py"), "stop"], cwd=ROOT)
         elif n == "C2-3":
             subprocess.call([sys.executable, os.path.join(SCRIPTS, "c2_scf.py"), "stop"], cwd=ROOT)
+        elif n == "R13":
+            subprocess.call([sys.executable, os.path.join(SCRIPTS, "r13_start.py"), "stop"], cwd=ROOT)
         elif n.startswith("C4-"):
             comp = {"C4-1": "redis", "C4-2": "minio", "C4-3": "rocketmq", "C4-4": "jmreport", "C4-5": "gen", "C4-6": "thymeleaf"}[n]
             subprocess.call([sys.executable, os.path.join(SCRIPTS, "c4_start.py"), "stop", comp], cwd=ROOT)

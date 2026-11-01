@@ -1,0 +1,144 @@
+# R13 桂平港务集团 · 集装箱调度系统（WAF 加固版）—— 盲测 v2 的 hold-out 验证站
+#
+# 与 R12 的区别：R12 只是"简单正则拦截"，R13 复刻真实商业 WAF 的四类行为，
+# 每一类都对着扫描器最容易出错的地方：
+#
+#   1. 特征拦截（路径穿越 / SQLi / 模板表达式 / 命令执行 / XXE）
+#      → 测：扫到 403 时判 SAFE 还是 UNKNOWN（07 §4.4 的陷阱）
+#   2. 扫描器指纹（UA / 探测路径模式）
+#      → 测：被识别为扫描器后返回统一拒绝页，扫描器是否把拒绝页当"漏洞存在"
+#   3. 频率限制（同一 IP 60 秒内超阈值）
+#      → 测：被限流后是否静默降级，还是诚实报错
+#   4. 路径混淆（对 .git/.env 等敏感路径返回 200 + 假内容）
+#      → 测：假 200 是否被当成真泄露（软 404 的加强版）
+#
+# 后端复用 R2（19202），数据天然一致，不需要额外导入。
+#
+# ⚠ 本文件是阶段 4 的未污染验证站，盲测 v2 阶段 1 全程不碰 19113。
+# ⚠ 部署与迭代都不告诉盲测执行者。
+
+server {
+    listen 19113;
+    server_name 127.0.0.1;
+    client_max_body_size 100m;
+
+    access_log logs/R13_access.log main;
+
+    # ── 1. 特征拦截 ──
+    # 覆盖 OWASP 常见注入/穿越/执行特征。
+    # 注意 R13 比 R12 更严：增加了 XSS、XXE、反序列化、NoSQL、LDAP 特征。
+    set $waf_block 0;
+
+    # 路径穿越：必须用 $request_uri（原始未规范化串），不能用 $uri。
+    # nginx 在匹配 location 前会把 /admin/../etc/passwd 规范化成 /etc/passwd，
+    # 此时 $uri 已经不含 ../，规则永远匹配不到（实测踩过：
+    # GET /admin/../etc/passwd 返回 302 而不是 403，因为规范化后变成 /etc/passwd，
+    # 后端不认识这个路径就跳登录页了）。
+    if ($request_uri ~* "(\.\./|%2e%2e%2f|%2e%2e/|\.\.%2f|%252e%252e)") {
+        set $waf_block 1;
+    }
+    if ($request_uri ~* "(union(\s|%20|\+)+select|select.+from|insert(\s|%20)+into|drop(\s|%20)+table|update.+set|delete(\s|%20)+from)") {
+        set $waf_block 1;
+    }
+    if ($request_uri ~* "(%24%7b|\$\{|%7b%7b|\{\{|__\$\{|<script|javascript:|onerror=|onload=)") {
+        set $waf_block 1;
+    }
+    if ($request_uri ~* "(runtime\.getruntime|runtime%2egetruntime|java\.lang\.|java%2elang%2e|processbuilder|class\.module\.classloader)") {
+        set $waf_block 1;
+    }
+    if ($request_uri ~* "(<!doctype|<!entity|%3c!doctype|%3c!entity|xmllib|xmlreader|saxparser)") {
+        set $waf_block 1;
+    }
+    if ($request_uri ~* "(rO0AB|aced0005|ysoserial|jndi:|ldap://|rmi://)") {
+        set $waf_block 1;
+    }
+    # 注意：这里**故意不拦** .git/.svn/.env —— 它们交给下面的「假 200」location 处理。
+    # 真实商业 WAF 对这类敏感路径有两种做法：直接 403，或返回蜜罐响应。
+    # R13 选后者，因为它是更难的测例：扫描器必须靠**内容比对**而不是状态码判断，
+    # 才能不被假的 200 骗到。
+    if ($request_uri ~* "(\.ds_store|web\.config|WEB-INF|META-INF)") {
+        set $waf_block 1;
+    }
+    if ($args ~* "(union(\s|%20|\+)+select|select.+from|runtime\.getruntime|java\.lang\.|\$\(|;id|;\s*cat|`id`)") {
+        set $waf_block 1;
+    }
+
+    # ── 2. 扫描器指纹 ──
+    # 真实 WAF 会拦常见扫描器 UA。这里只拦最明显的几个，
+    # 不拦 python-requests（否则整个靶场没法测）——那太"作弊"了。
+    if ($http_user_agent ~* "(sqlmap|nikto|nmap|masscan|zgrab|nuclei|acunetix|nessus|openvas|awvs)") {
+        set $waf_block 1;
+    }
+
+    # ── 3. 统一拒绝页 ──
+    error_page 403 @waf_block;
+
+    location @waf_block {
+        default_type text/html;
+        charset utf-8;
+        return 403 '<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>403 Forbidden</title>
+<style>
+body{margin:0;font-family:"Microsoft YaHei",Arial,sans-serif;background:#f5f6f8;color:#333}
+.box{max-width:680px;margin:110px auto;background:#fff;border:1px solid #e3e6eb;padding:44px}
+h1{font-size:22px;margin:0 0 14px}
+p{line-height:1.9;color:#666;margin:8px 0}
+.code{color:#999;font-size:13px;margin-top:26px}
+</style>
+</head>
+<body>
+<div class="box">
+<h1>403 Forbidden</h1>
+<p>您的请求已被安全网关拦截。</p>
+<p>如为正常业务访问，请联系港口信息中心并提供访问时间。</p>
+<p class="code">Incident ID: 7d41c9e2-83a5-4fbb-a1d6-waf13</p>
+</div>
+</body>
+</html>';
+    }
+
+    # ── 4. 敏感路径返回「假 200」 ──
+    # 这一条是 R13 最狠的地方：对 .git/.env 等路径不返回 403，
+    # 而是返回 200 + 一份**看起来像真的但实际无害**的内容。
+    # 真实商业 WAF 的"蜜罐响应"就是这样干的。
+    #
+    # 目的是测：扫描器会不会把「200 + 内容匹配」当成真泄露。
+    # 正确的做法应该是内容比对（真 .git/HEAD 是 "ref: refs/heads/..."），
+    # 而不是只看 200 + 关键词。
+    location ~ ^/(\.git/HEAD|\.env|\.svn/entries)$ {
+        default_type text/plain;
+        charset utf-8;
+        add_header X-Decoy "1" always;
+        return 200 'Connecting to backend service... please wait.
+
+If this page persists, the service may be under maintenance.
+Contact: port-it@guiping-port.example
+';
+    }
+
+    # ── 5. 正常流量转发（含 WAF 判断）──
+    #
+    # ⚠ 结构说明（踩过的坑）：
+    # 最初把 `if ($waf_block = 1) { return 403; }` 写在 server 级末尾，结果是
+    # **假 200 的 location 永远不会命中** —— nginx 的 server 级 if 属 rewrite 阶段，
+    # 在 location 选择**之前**执行并直接 return，把请求截断了。
+    #
+    # 现在把 WAF 判断放进 location / 内部：只有走正常转发的请求才过 WAF，
+    # 假 200 的 location 优先级更高（正则 location 先于前缀 location 匹配），
+    # 不受影响。这样两类行为各归各管，不互相踩。
+    location / {
+        if ($waf_block = 1) {
+            return 403;
+        }
+        proxy_pass http://127.0.0.1:19202;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Port $server_port;
+    }
+}
