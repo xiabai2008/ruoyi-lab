@@ -81,6 +81,17 @@ C4 = {
         "probe": "http",
         "env": {"JAVA_HOME": r"D:\develop\jdk-17.0.0.1"},
     },
+    "jmreport": {
+        "id": "C4-4",
+        "port": 19081,
+        "pidfile": "C4-4-jmreport.pid",
+        "exe": r"D:\develop\jdk-17.0.0.1\bin\java.exe",
+        "args": ["-jar", "c4-jmreport-ssti-1.0.0.jar"],
+        "cwd": os.path.join(ROOT, "runtime", "C4", "jmreport"),
+        "desc": "JeecgBoot jmreport Freemarker SSTI（真实模板引擎求值，无鉴权）",
+        "probe": "ssti",
+        "env": {"JAVA_HOME": r"D:\develop\jdk-17.0.0.1"},
+    },
 }
 
 ALL = list(C4)
@@ -152,6 +163,34 @@ def probe_redis(port: int) -> str:
         return f"已认证/异常响应: {text[:60]}"
     finally:
         s.close()
+
+
+def probe_ssti(port: int) -> str:
+    """对 jmreport SSTI 靶场做真实探针：确认模板引擎真的在求值。
+
+    只检查端口不够 —— 服务起来了但模板引擎没接对（比如 Freemarker bean 没注入）
+    时，接口会返回 200 + 错误 JSON，看起来"健康"其实靶场是坏的。
+    所以这里直接发 ${7*7}，断言响应里出现 49。这是唯一能证明靶场有效的判据。
+    """
+    import urllib.error
+    import urllib.request
+
+    url = f"http://127.0.0.1:{port}/jeecg-boot/jmreport/testConnection"
+    payload = (
+        b'{"dbType":"MYSQL","dbName":"test","url":"jdbc:mysql://127.0.0.1:3306/test",'
+        b'"userName":"root","password":"x","connUrl":"jdbc:mysql://127.0.0.1:3306/test?query=${7*7}"}'
+    )
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            body = r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return f"HTTP {e.code}（接口异常）"
+    except Exception as e:
+        return f"不可达: {e}"
+    if '"49"' in body or "=49" in body:
+        return "模板引擎求值正常（${7*7}→49）"
+    return f"未求值（靶场异常）：{body[:80]}"
 
 
 def probe_http(port: int, path: str = "/") -> str:
@@ -251,6 +290,8 @@ def status_one(name: str) -> dict:
         return {"id": cid, "name": name, "state": "DOWN", "detail": f"端口 {port} 未监听", "pid": pid}
     if cfg["probe"] == "redis":
         detail = probe_redis(port)
+    elif cfg["probe"] == "ssti":
+        detail = probe_ssti(port)
     else:
         detail = probe_http(port)
     return {"id": cid, "name": name, "state": "UP", "detail": f"{port} · {detail}", "pid": pid}
@@ -278,12 +319,20 @@ def resolve(names: list[str]) -> list[str]:
     return out
 
 
+# name -> (源码目录, jar 文件名, runtime 子目录)
+BUILDABLE = {
+    "rocketmq": ("rocketmq-dashboard", "c4-rocketmq-dashboard-1.0.0.jar", "rocketmq"),
+    "jmreport": ("jmreport-ssti", "c4-jmreport-ssti-1.0.0.jar", "jmreport"),
+}
+
+
 def build(name: str) -> bool:
-    """重新构建 C4 靶场的 jar（Maven 产物不入库，只能现build）。"""
-    if name != "rocketmq":
+    """重新构建 C4 靶场的 jar（Maven 产物不入库，只能现 build）。"""
+    if name not in BUILDABLE:
         print(f"[SKIP] {name} 不需要构建（无源码）")
         return True
-    src_dir = os.path.join(ROOT, "src", "C4", "rocketmq-dashboard")
+    src_name, jar_name, rt_name = BUILDABLE[name]
+    src_dir = os.path.join(ROOT, "src", "C4", src_name)
     if not os.path.isdir(src_dir):
         print(f"[FAIL] 源码目录不存在: {src_dir}")
         return False
@@ -298,14 +347,14 @@ def build(name: str) -> bool:
         return False
     import shutil
 
-    src_jar = os.path.join(src_dir, "target", "c4-rocketmq-dashboard-1.0.0.jar")
+    src_jar = os.path.join(src_dir, "target", jar_name)
     if not os.path.exists(src_jar):
         print(f"[FAIL] 构建成功但找不到产物: {src_jar}")
         return False
-    dst_dir = os.path.join(ROOT, "runtime", "C4", "rocketmq")
+    dst_dir = os.path.join(ROOT, "runtime", "C4", rt_name)
     os.makedirs(dst_dir, exist_ok=True)
-    shutil.copy2(src_jar, os.path.join(dst_dir, "c4-rocketmq-dashboard-1.0.0.jar"))
-    print("[OK] 已复制到 runtime/C4/rocketmq/")
+    shutil.copy2(src_jar, os.path.join(dst_dir, jar_name))
+    print(f"[OK] 已复制到 runtime/C4/{rt_name}/")
     return True
 
 
