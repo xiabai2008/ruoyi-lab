@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RocketMQ Dashboard</title>
+    <!--
+      还原 rocketmq-console-ng 的真实页面特征：
+      标题含 RocketMQ Dashboard、导航含 NameServer/Broker/Topic 专有词、
+      内联 JS 里的全局变量叫 mqnamesrv —— 这些都是扫描器识别控制台的依据。
+    -->
+    <style>
+        body { margin: 0; font-family: "Microsoft YaHei", Arial, sans-serif; background: #f5f6f8; color: #2c3e50; }
+        .top { background: #2c3e50; color: #ecf0f1; padding: 14px 24px; display: flex; justify-content: space-between; }
+        .top h1 { margin: 0; font-size: 18px; font-weight: 500; }
+        .nav { background: #34495e; padding: 0 24px; }
+        .nav a { display: inline-block; color: #bdc3c7; text-decoration: none; padding: 12px 16px; font-size: 14px; }
+        .nav a.active, .nav a:hover { background: #2c3e50; color: #fff; }
+        .wrap { padding: 24px; }
+        .card { background: #fff; border: 1px solid #e1e5ea; margin-bottom: 20px; }
+        .card h2 { margin: 0; padding: 12px 16px; font-size: 15px; border-bottom: 1px solid #eef1f5; font-weight: 500; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { text-align: left; padding: 9px 16px; border-bottom: 1px solid #f0f2f5; }
+        th { background: #fafbfc; color: #7f8c8d; font-weight: 500; }
+        .meta { color: #95a5a6; font-size: 12px; padding: 10px 16px; }
+        .tag { display: inline-block; padding: 1px 7px; background: #eaf4ff; color: #2980b9; font-size: 12px; }
+    </style>
+    <script>
+        // 真实 dashboard 的全局配置对象
+        var mqnamesrv = "<th:block th:text="${namesrvAddr}"/>";
+        var rocketmqCluster = "<th:block th:text="${clusterName}"/>";
+        var rocketmqVersion = "<th:block th:text="${version}"/>";
+    </script>
+</head>
+<body>
+<div class="top">
+    <h1>RocketMQ Dashboard</h1>
+    <div style="font-size:13px;opacity:.8">集群 <span class="tag" th:text="${clusterName}">rocketmq-cluster-prod</span></div>
+</div>
+<div class="nav">
+    <a href="/" class="active">集群</a>
+    <a href="/topic/list.query">主题</a>
+    <a href="/consumer/list.query">消费者</a>
+    <a href="/message/list.query">消息</a>
+    <a href="/namesrv/addr">NameServer</a>
+</div>
+
+<div class="wrap">
+    <div class="card">
+        <h2>集群概览</h2>
+        <div class="meta">NameServer 地址：<span th:text="${namesrvAddr}">10.20.30.41:9876</span>　版本：<span th:text="${version}">4.9.4</span></div>
+        <table>
+            <thead><tr><th>Broker 名称</th><th>地址</th><th>BrokerId</th></tr></thead>
+            <tbody>
+            <tr th:each="b : ${brokers}">
+                <td th:text="${b['brokerName']}">broker-a</td>
+                <td th:text="${b['addr']}">10.20.30.41:10911</td>
+                <td th:text="${b['id']}">0</td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>主题列表</h2>
+        <table>
+            <thead><tr><th>Topic</th><th>读队列数</th><th>权限</th></tr></thead>
+            <tbody>
+            <tr th:each="t : ${topics}">
+                <td th:text="${t['name']}">order_create_topic</td>
+                <td th:text="${t['readQueueNums']}">16</td>
+                <td th:text="${t['perm']}">6</td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,15 @@
+server:
+  port: 19080
+  # 真实 rocketmq-dashboard 默认 context-path 为空，控制台就挂在根路径上。
+  # 这是扫描器探 /rocketmq/、/dashboard/ 会全部落空的根本原因。
+
+spring:
+  application:
+    name: rocketmq-dashboard
+  thymeleaf:
+    cache: false
+    encoding: UTF-8
+
+logging:
+  level:
+    root: INFO

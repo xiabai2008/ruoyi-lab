@@ -1,9 +1,15 @@
 # ── 不纳入版本控制：可重建的产物与巨量二进制 ──
 # src/ 是各站上游源码检出（4.9G），build/ 是构建产物（1.8G），
 # runtime/ 是运行目录与前端部署（2.2G），全部可由 tag + 构建脚本重建。
-src/
+# src/ 下绝大多数是上游源码检出（R1–R12 共 4.9G），但 C4 是自己写的靶场源码，
+# 必须跟踪 —— 否则重建靶场就没了。同样的道理适用于 runtime/C4 下的配置文件。
+src/*
+!src/C4/
 build/
-runtime/
+runtime/*
+!runtime/C4/
+runtime/*/run.log
+runtime/*/run.err.log
 mysql/
 tools/
 .m2/
@@ -53,3 +59,11 @@ Thumbs.db
 # ── 靶场运行时的临时校验文件 ──
 _seed_*.tmp
 *.tmp
+
+# 靶场源码（src/C4）只跟踪手写代码；Maven 产物不入库 —— 用
+#   python scripts\c4_start.py build rocketmq
+# 重新构建（脚本会自动 mvn package 并复制 jar 到 runtime/）。
+src/C4/*/target/
+
+# runtime/C4 只跟踪配置文件（redis.conf 等）；构建产物 jar 不入库。
+runtime/C4/*/*.jar
