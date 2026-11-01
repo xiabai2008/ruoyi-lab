@@ -1,0 +1,19 @@
+# 统一换行符，避免 Windows 开发、Linux CI 之间的假差异。
+#
+# 背景：项目在 Windows 上开发，此前工作区是 CRLF 而仓库 blob 是 LF，
+# 每次比对都要先归一化才看得出是不是真改动（踩过一次）。
+
+* text=auto eol=lf
+
+# 批处理必须是 CRLF —— cmd.exe 对纯 LF 的 .bat 解析不可靠
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制，不做任何换行转换
+*.jar binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.gz binary
+*.pack binary
+*.xlsx binary
