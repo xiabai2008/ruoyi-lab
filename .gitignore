@@ -71,3 +71,6 @@ src/C4/*/target/
 
 # runtime/C4 只跟踪配置文件（redis.conf 等）；构建产物 jar 不入库。
 runtime/C4/*/*.jar
+
+# runtime/C4/minio/ 下只跟配置；MinIO 的数据目录（.minio.sys / 对象文件）不入库
+runtime/C4/minio/data/

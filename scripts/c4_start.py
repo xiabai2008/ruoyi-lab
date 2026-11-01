@@ -67,12 +67,14 @@ C4 = {
         "id": "C4-2",
         "port": 19000,
         "pidfile": "C4-2-minio.pid",
-        "exe": os.path.join(TOOLS, "minio", "minio.exe"),
-        "args": ["server", os.path.join(ROOT, "runtime", "C4", "minio", "data"), "--address", ":19000"],
+        # 不是真 MinIO 二进制：社区版已被 MinIO 官方下架（所有 dl.min.io/server/... 返回 410），
+        # 仅存的 AIStor 版需要商业 license，无 license 时连 ListBuckets 都拒绝，
+        # 做不了「匿名可读」场景。改用按真实 S3 协议复刻的服务（响应头/XML 结构照抄）。
+        "exe": sys.executable,
+        "args": [os.path.join(ROOT, "src", "C4", "minio-s3", "server.py"), "--port", "19000"],
         "cwd": os.path.join(ROOT, "runtime", "C4", "minio"),
-        "desc": "MinIO 未授权（匿名读写 policy）",
-        "probe": "http",
-        "env": {"MINIO_ROOT_USER": "", "MINIO_ROOT_PASSWORD": ""},
+        "desc": "MinIO/S3 未授权（真实 S3 协议复刻，S3 根路径匿名可列举）",
+        "probe": "minio_s3",
     },
     "rocketmq": {
         "id": "C4-3",
@@ -274,6 +276,29 @@ def probe_ssti_thymeleaf(port: int) -> str:
     return f"未求值：{body[:80]}"
 
 
+def probe_minio(port: int) -> str:
+    """对 MinIO/S3 靶场做探针：确认 S3 根路径真的返回匿名桶列表。
+
+    只检查端口不够 —— 服务起了但 S3 路由没接对时，根路径会返回 404，
+    看起来"健康"其实靶场是坏的。真实判据是「根路径 200 + 含 S3 XML 元素」。
+    """
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=8) as r:
+            body = r.read().decode("utf-8", "replace")
+            code = r.status
+    except urllib.error.HTTPError as e:
+        return f"HTTP {e.code}（匿名列举被拒，安全态）"
+    except Exception as e:
+        return f"不可达: {e}"
+    if code == 200 and "<ListAllMyBucketsResult" in body:
+        n = body.count("<Bucket>")
+        return f"S3 匿名列举正常（根路径返回 {n} 个桶）"
+    return f"未返回桶列表：{body[:80]}"
+
+
 def probe_http(port: int, path: str = "/") -> str:
     import urllib.error
     import urllib.request
@@ -377,6 +402,8 @@ def status_one(name: str) -> dict:
         detail = probe_ssti_gen(port)
     elif cfg["probe"] == "ssti_thymeleaf":
         detail = probe_ssti_thymeleaf(port)
+    elif cfg["probe"] == "minio_s3":
+        detail = probe_minio(port)
     else:
         detail = probe_http(port)
     return {"id": cid, "name": name, "state": "UP", "detail": f"{port} · {detail}", "pid": pid}
