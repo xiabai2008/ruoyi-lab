@@ -127,12 +127,21 @@ SITES: dict[str, dict] = {
     "C3":  {"group": "special", "entry": 19331, "backend": 0, "probe": ("/", {200}), "pidfile": "C3.pid"},
     "D1":  {"group": "special", "entry": 19321, "backend": 19221, "probe": ("/portal/auth/signin", {200}), "pidfile": "D1.pid"},
     "A2":  {"group": "special", "entry": 19341, "backend": 19241, "probe": ("/login", {200, 302}), "pidfile": "A2.pid"},
+
+    # ── C4 中间件靶场（对应 redis/minio/rocketmq 三个从未验证过的插件）──
+    # C4-1 Redis 在 16379（避开宿主 6379）；探针由 c4_start.py 用 INFO 判定，
+    # 这里只做端口级检查 —— Redis 没有 HTTP 入口，套 http_probe 会永远失败。
+    "C4-1": {"group": "middleware", "entry": 16379, "backend": 0, "probe": None, "pidfile": "C4-1-redis.pid"},
+    "C4-2": {"group": "middleware", "entry": 19000, "backend": 0, "probe": ("/minio/health/live", {200}), "pidfile": "C4-2-minio.pid"},
+    # RocketMQ Dashboard 的控制台在根路径，不是 /rocketmq/
+    "C4-3": {"group": "middleware", "entry": 19080, "backend": 0, "probe": ("/", {200}), "pidfile": "C4-3-rocketmq.pid"},
 }
 
 GROUPS = {
     "infra": ["infra:mysql", "infra:redis", "infra:nginx"],
     "site": [f"R{i}" for i in range(1, 13)],
-    "component": [k for k in SITES if k.startswith("C")],
+    "component": [k for k in SITES if k.startswith("C") and not k.startswith("C4-")],
+    "middleware": [k for k in SITES if k.startswith("C4-")],
     "special": ["C3", "D1", "A2"],
     "r1-r5": ["R1", "R2", "R3", "R4", "R5"],
     "vue": ["R6", "R7", "R9", "R10"],
@@ -459,6 +468,11 @@ def start_site(name: str) -> bool:
         comp = {"C1-1": "jolokia", "C1-2": "h2-console", "C1-3": "data-service", "C1-4": "config-server"}[name]
         return subprocess.call([sys.executable, os.path.join(SCRIPTS, "components_start.py"), comp], cwd=ROOT) == 0
 
+    # C4 中间件（Redis / MinIO / RocketMQ），由 c4_start.py 统一管理
+    if name.startswith("C4-"):
+        comp = {"C4-1": "redis", "C4-2": "minio", "C4-3": "rocketmq"}[name]
+        return subprocess.call([sys.executable, os.path.join(SCRIPTS, "c4_start.py"), "start", comp], cwd=ROOT) == 0
+
     # C2 / C3 / D1 / A2
     special = {
         "C2-1a": ("c2_sba.py", "start"), "C2-1b": ("c2_sba.py", "start"),
@@ -544,6 +558,9 @@ def cmd_down(names: list[str]) -> int:
             subprocess.call([sys.executable, os.path.join(SCRIPTS, "c2_s4s.py"), "stop"], cwd=ROOT)
         elif n == "C2-3":
             subprocess.call([sys.executable, os.path.join(SCRIPTS, "c2_scf.py"), "stop"], cwd=ROOT)
+        elif n.startswith("C4-"):
+            comp = {"C4-1": "redis", "C4-2": "minio", "C4-3": "rocketmq"}[n]
+            subprocess.call([sys.executable, os.path.join(SCRIPTS, "c4_start.py"), "stop", comp], cwd=ROOT)
         elif n == "C3":
             subprocess.call([sys.executable, os.path.join(SCRIPTS, "c3_honeypot.py"), "stop"], cwd=ROOT)
         elif n == "D1":
