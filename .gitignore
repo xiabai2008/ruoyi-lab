@@ -50,8 +50,12 @@ __pycache__/
 venv/
 
 # ── 编辑器 / 系统 ──
+# 例外：lab_assets/ 下的 .idea/.vscode 是**靶场诱饵**（模拟源码残留泄露），
+# 不是本地编辑器配置，必须入库。
 .vscode/
 .idea/
+!lab_assets/**/.idea/
+!lab_assets/**/.vscode/
 *.swp
 .DS_Store
 Thumbs.db
