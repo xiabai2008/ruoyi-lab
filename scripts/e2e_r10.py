@@ -19,7 +19,7 @@ import time
 
 from playwright.sync_api import sync_playwright
 
-ROOT = r"C:\Users\HZR\Desktop\若依系统"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHOTS = os.path.join(ROOT, "runtime", "R10", "shots")
 BASE = "http://127.0.0.1:19110"
 REDIS_CLI = os.path.join(ROOT, "tools", "redis", "redis-cli.exe")

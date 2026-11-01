@@ -1,6 +1,9 @@
+import os
 import io
 
-p = r"C:\Users\HZR\Desktop\若依系统\src\R10\jeecg-module-system\jeecg-system-start\src\main\resources\application-dev.yml"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+p = os.path.join(ROOT, "src", "R10", "jeecg-module-system", "jeecg-system-start",
+                 "src", "main", "resources", "application-dev.yml")
 lines = io.open(p, encoding="utf-8").read().split("\n")
 for i, line in enumerate(lines):
     if "jdbc:mysql://127.0.0.1:3306/jeecg-boot?" in line:

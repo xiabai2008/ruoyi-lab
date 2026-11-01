@@ -1,7 +1,8 @@
 import io
 import os
 
-base = r"C:\Users\HZR\Desktop\若依系统\src\R9\ruoyi-admin\src\main\resources"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+base = os.path.join(ROOT, "src", "R9", "ruoyi-admin", "src", "main", "resources")
 app = os.path.join(base, "application.yml")
 dev = os.path.join(base, "application-dev.yml")
 

@@ -81,7 +81,7 @@ python scripts\labenv.py
 ### 起停
 
 ```bash
-cd "C:\Users\HZR\Desktop\若依系统"
+cd <工程根>
 
 # 体检：入口码 + 后端端口 + 业务探针三级判定
 python scripts\lab.py status

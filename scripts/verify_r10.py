@@ -1,3 +1,4 @@
+import os
 # -*- coding: utf-8 -*-
 """R10 星图数据（JeecgBoot）验收脚本。
 
@@ -17,7 +18,7 @@ import time
 import requests
 
 BASE = "http://127.0.0.1:19210/jeecg-boot"
-ROOT = r"C:\Users\HZR\Desktop\若依系统"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REDIS_CLI = ROOT + r"\tools\redis\redis-cli.exe"
 REDIS_PASS = "ruoyi123"
 REDIS_DB = "4"
