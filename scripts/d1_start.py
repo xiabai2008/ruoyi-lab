@@ -1,13 +1,21 @@
-r"""D1 邕江物流运输管理系统 独立启停。
+r"""D1 邕江物流运输管理系统 独立启停（含漏洞演示模式开关）。
 
 用法：
-    python scripts\d1_start.py start|stop|status
+    python scripts\d1_start.py start [safe|vuln]     # 默认 safe
+    python scripts\d1_start.py start --lab-mode vuln
+    python scripts\d1_start.py stop|status
+
+lab.mode=vuln 时以 -Dlab.mode=vuln 启动后端，开启 D1 漏洞演示模块
+（/openapi/** 进 Shiro anon 白名单 + 开放接口模板求值）；默认 safe 为官方行为。
+也可用环境变量 LAB_MODE=safe|vuln 指定（python scripts\lab.py up D1 --lab-mode vuln
+即通过 LAB_MODE 透传到本脚本）。
 
 只操作 D1：后端 19221、Nginx 19321、PID .state\D1.pid。
 Nginx 采用按站点启停：start 启用 conf.d\D1.conf 并 reload，
 stop 停用（改名为 D1.conf.disabled）并 reload，19321 随即释放，不影响其他站点。
 """
 import ctypes
+import json
 import os
 import socket
 import subprocess
@@ -88,6 +96,48 @@ def http_code(url, timeout=5):
         return exc.code
     except Exception:
         return None
+
+
+MODES = ("safe", "vuln")
+
+
+def parse_mode(args):
+    """解析 start 的模式参数：位置参数 safe|vuln 或 --lab-mode safe|vuln；缺省读 LAB_MODE。"""
+    mode = ""
+    index = 0
+    while index < len(args):
+        item = args[index]
+        if item == "--lab-mode":
+            if index + 1 >= len(args):
+                print("[FAIL] --lab-mode 缺少取值（safe|vuln）")
+                return None
+            mode = args[index + 1].strip().lower()
+            index += 2
+            continue
+        if item.lower() in MODES:
+            mode = item.lower()
+            index += 1
+            continue
+        print("[FAIL] 无法识别的参数: %s" % item)
+        return None
+    if not mode:
+        mode = (os.environ.get("LAB_MODE") or "safe").strip().lower()
+    if mode not in MODES:
+        print("[FAIL] lab.mode 只能是 safe 或 vuln，实际: %s" % mode)
+        return None
+    return mode
+
+
+def lab_mode():
+    """从后端 /portal/lab/status 读取当前运行模式；读不到返回 unknown。"""
+    try:
+        with urllib.request.urlopen(
+            "http://127.0.0.1:%d/portal/lab/status" % BACKEND_PORT, timeout=3
+        ) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        return body.get("labMode") or "unknown"
+    except Exception:
+        return "unknown"
 
 
 def wait_http(url, timeout, label, expect=200):
@@ -180,14 +230,15 @@ def fail_cleanup(pid=None):
         pass
 
 
-def start():
+def start(mode="safe"):
+    print("[..] D1 漏洞演示模式: %s（启动参数 -Dlab.mode=%s）" % (mode, mode))
     if not os.path.exists(JAR):
         print("[FAIL] 缺少 %s，请先构建 src/D1 并复制到 build/D1" % JAR)
         return 1
     if port_open(BACKEND_PORT):
         pid = read_pid(PIDFILE)
         if pid and pid_alive(pid):
-            print("[SKIP] D1 后端已在运行，端口 %d" % BACKEND_PORT)
+            print("[SKIP] D1 后端已在运行，端口 %d（当前 lab.mode=%s）" % (BACKEND_PORT, lab_mode()))
             if not port_open(NGINX_PORT):
                 if not enable_conf() or not wait_http(
                     "http://127.0.0.1:%d/portal/auth/signin" % NGINX_PORT, 30, "D1 Nginx 入口"
@@ -220,6 +271,7 @@ def start():
                 "-Xms256m",
                 "-Xmx512m",
                 "-Dfile.encoding=UTF-8",
+                "-Dlab.mode=%s" % mode,
                 "-jar",
                 JAR,
                 "--server.port=%d" % BACKEND_PORT,
@@ -235,7 +287,7 @@ def start():
         )
     with open(PIDFILE, "w") as f:
         f.write(str(proc.pid))
-    print("[..] D1 后端启动 pid=%s port=%d" % (proc.pid, BACKEND_PORT))
+    print("[..] D1 后端启动 pid=%s port=%d lab.mode=%s" % (proc.pid, BACKEND_PORT, mode))
 
     deadline = time.time() + 180
     last = None
@@ -306,6 +358,7 @@ def status():
         "disabled" if os.path.exists(CONF_DISABLED) else "missing"
     )
     print("D1 邕江物流运输管理系统")
+    print("  lab.mode    %s" % lab_mode())
     print(
         "  backend     pid=%-7s alive=%-5s port=%-5d listening=%-5s http=%s"
         % (pid, pid_alive(pid), BACKEND_PORT, port_open(BACKEND_PORT), backend_http)
@@ -318,10 +371,21 @@ def status():
 
 
 def main():
-    if len(sys.argv) != 2 or sys.argv[1] not in ("start", "stop", "status"):
-        print("usage: d1_start.py start|stop|status")
-        return 1
-    return {"start": start, "stop": stop, "status": status}[sys.argv[1]]()
+    argv = sys.argv[1:]
+    if not argv or argv[0] not in ("start", "stop", "status"):
+        print("usage: d1_start.py start [safe|vuln] | stop | status")
+        print("       d1_start.py start --lab-mode safe|vuln（默认 safe，也可用环境变量 LAB_MODE）")
+        return 2
+    command, rest = argv[0], argv[1:]
+    if command != "start":
+        if rest:
+            print("[FAIL] %s 不接受参数: %s" % (command, " ".join(rest)))
+            return 2
+        return {"stop": stop, "status": status}[command]()
+    mode = parse_mode(rest)
+    if mode is None:
+        return 2
+    return start(mode)
 
 
 if __name__ == "__main__":

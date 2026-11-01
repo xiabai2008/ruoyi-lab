@@ -22,4 +22,34 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Port $server_port;
     }
+
+    # ── 二开「内部运维开放接口」网关兼容映射 ─────────────────────────────
+    # 二期把内部运维开放接口迁到了 /portal/openapi/**，外部运维平台仍按改版前
+    # 的老路径调用。这里只为迁移过的 2 个接口保留网关级路径映射（等价于运维在
+    # 网关做 URI rewrite）：只改路径、不做任何鉴权，安全边界全部由后端 Shiro
+    # 过滤链负责。漏洞版（lab.mode=vuln）把 /openapi/** 加进 Shiro anon 白名单
+    # 后，这两条老路径即被匿名访问；safe 模式下匿名请求仍被 302 到登录页。
+    #
+    # 只映射精确路径、不做前缀映射：D1 的其它 /monitor/**、/tool/gen/** 路径
+    # 维持 404，避免改变站点既有形态（如扫描器的上下文前缀发现逻辑依赖
+    # /monitor/job/list 在根路径 404）。
+    location = /monitor/job/edit {
+        proxy_pass http://127.0.0.1:19221/portal/openapi/monitor/job/edit;
+        proxy_redirect http://127.0.0.1:19221/ /;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Port $server_port;
+    }
+
+    location ^~ /tool/gen/preview/ {
+        proxy_pass http://127.0.0.1:19221/portal/openapi/tool/gen/preview/;
+        proxy_redirect http://127.0.0.1:19221/ /;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Port $server_port;
+    }
 }
