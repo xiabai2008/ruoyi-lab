@@ -39,6 +39,10 @@ for _stream in (sys.stdout, sys.stderr):
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE_DIR = os.path.join(ROOT, ".state")
 TOOLS = os.path.join(ROOT, "tools")
+# JDK17 解释器路径，统一收成一个常量。
+# 用正斜杠：Windows API 同样接受，而且彻底避开反斜杠转义坑
+# （写转义时 \b 会被解释成退格符，路径会静默变成 "jdk-17.0.0.1in\java.exe"）。
+JAVA17 = "D:/develop/jdk-17.0.0.1/bin/java.exe"
 
 FLAGS = 0
 FLAGS |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
@@ -74,7 +78,7 @@ C4 = {
         "id": "C4-3",
         "port": 19080,
         "pidfile": "C4-3-rocketmq.pid",
-        "exe": r"D:\develop\jdk-17.0.0.1\bin\java.exe",
+        "exe": JAVA17,
         "args": ["-jar", "c4-rocketmq-dashboard-1.0.0.jar"],
         "cwd": os.path.join(ROOT, "runtime", "C4", "rocketmq"),
         "desc": "RocketMQ Dashboard 未授权（官方默认无鉴权，控制台在根路径 /）",
@@ -85,7 +89,7 @@ C4 = {
         "id": "C4-4",
         "port": 19081,
         "pidfile": "C4-4-jmreport.pid",
-        "exe": r"D:\develop\jdk-17.0.0.1\bin\java.exe",
+        "exe": JAVA17,
         "args": ["-jar", "c4-jmreport-ssti-1.0.0.jar"],
         "cwd": os.path.join(ROOT, "runtime", "C4", "jmreport"),
         "desc": "JeecgBoot jmreport Freemarker SSTI（真实模板引擎求值，无鉴权）",
@@ -96,11 +100,22 @@ C4 = {
         "id": "C4-5",
         "port": 19082,
         "pidfile": "C4-5-gen.pid",
-        "exe": r"D:\develop\jdk-17.0.0.1in\java.exe",
+        "exe": JAVA17,
         "args": ["-jar", "c4-ruoyi-gen-ssti-1.0.0.jar"],
         "cwd": os.path.join(ROOT, "runtime", "C4", "gen"),
         "desc": "若依代码生成预览 SSTI（真实 Freemarker 渲染 tableName）",
         "probe": "ssti_gen",
+        "env": {"JAVA_HOME": r"D:\develop\jdk-17.0.0.1"},
+    },
+    "thymeleaf": {
+        "id": "C4-6",
+        "port": 19083,
+        "pidfile": "C4-6-thymeleaf.pid",
+        "exe": JAVA17,
+        "args": ["-jar", "c4-thymeleaf-ssti-1.0.0.jar"],
+        "cwd": os.path.join(ROOT, "runtime", "C4", "thymeleaf"),
+        "desc": "Thymeleaf/SpEL 视图名注入（真实 SpEL 求值 __${}__ ）",
+        "probe": "ssti_thymeleaf",
         "env": {"JAVA_HOME": r"D:\develop\jdk-17.0.0.1"},
     },
 }
@@ -228,6 +243,37 @@ def probe_ssti_gen(port: int) -> str:
     return f"未求值（靶场异常）：{body[:80]}"
 
 
+def probe_ssti_thymeleaf(port: int) -> str:
+    """对 Thymeleaf/SpEL 视图名注入靶场做探针：确认 __${}__ 真被求值。
+
+    断言两件事：响应出现求值结果 49，且带 org.thymeleaf 引擎异常特征。
+    只有 49 不算 —— 普通页面也可能碰巧有 49（插件判定也是这个逻辑）。
+    """
+    import urllib.error
+    import urllib.request
+
+    url = f"http://127.0.0.1:{port}/__%24%7B7*7%7D__::.x"
+    try:
+        with urllib.request.urlopen(url, timeout=8) as r:
+            body = r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        # 靶场正常会返回 500 + 含引擎异常的报错页，所以 HTTPError 也要读 body
+        try:
+            body = e.read().decode("utf-8", "replace")
+        except Exception:
+            return f"HTTP {e.code}（无法读取响应体）"
+    except Exception as e:
+        return f"不可达: {e}"
+
+    has_result = "49" in body
+    has_engine = "org.thymeleaf" in body or "TemplateProcessingException" in body
+    if has_result and has_engine:
+        return "SpEL 求值正常（__${7*7}__ → 49 + Thymeleaf 异常特征）"
+    if not has_engine:
+        return f"缺引擎特征（靶场异常）：{body[:80]}"
+    return f"未求值：{body[:80]}"
+
+
 def probe_http(port: int, path: str = "/") -> str:
     import urllib.error
     import urllib.request
@@ -329,6 +375,8 @@ def status_one(name: str) -> dict:
         detail = probe_ssti(port)
     elif cfg["probe"] == "ssti_gen":
         detail = probe_ssti_gen(port)
+    elif cfg["probe"] == "ssti_thymeleaf":
+        detail = probe_ssti_thymeleaf(port)
     else:
         detail = probe_http(port)
     return {"id": cid, "name": name, "state": "UP", "detail": f"{port} · {detail}", "pid": pid}
@@ -361,6 +409,7 @@ BUILDABLE = {
     "rocketmq": ("rocketmq-dashboard", "c4-rocketmq-dashboard-1.0.0.jar", "rocketmq"),
     "jmreport": ("jmreport-ssti", "c4-jmreport-ssti-1.0.0.jar", "jmreport"),
     "gen": ("ruoyi-gen-ssti", "c4-ruoyi-gen-ssti-1.0.0.jar", "gen"),
+    "thymeleaf": ("thymeleaf-ssti", "c4-thymeleaf-ssti-1.0.0.jar", "thymeleaf"),
 }
 
 

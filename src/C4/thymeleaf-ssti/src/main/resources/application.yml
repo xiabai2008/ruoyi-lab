@@ -1,0 +1,19 @@
+server:
+  port: 19083
+  tomcat:
+    # 允许路径中出现 {} $ % 等特殊字符（默认会拒绝），否则表达式传不进来。
+    # ⚠ 值必须用双引号包住：YAML 里逗号是分隔符，不加引号会被解析成多个元素而报错。
+    # ⚠ 不要写反斜杠转义（\\）：Bash heredoc 会把 \\ 折叠成 \，YAML 再解析就成空值。
+    relaxed-path-chars: "[,],{,},$,%"
+    relaxed-query-chars: "[,],{,},$,%"
+
+spring:
+  application:
+    name: c4-thymeleaf-ssti
+  thymeleaf:
+    cache: false
+    charset: UTF-8
+
+logging:
+  level:
+    root: INFO

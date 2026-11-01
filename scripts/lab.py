@@ -138,6 +138,7 @@ SITES: dict[str, dict] = {
     # jmreport SSTI 靶场：无根路由，探针打接口本身（GET 会 405，所以只做端口级检查）
     "C4-4": {"group": "middleware", "entry": 19081, "backend": 0, "probe": None, "pidfile": "C4-4-jmreport.pid"},
     "C4-5": {"group": "middleware", "entry": 19082, "backend": 0, "probe": ("/tool/gen", {200}), "pidfile": "C4-5-gen.pid"},
+    "C4-6": {"group": "middleware", "entry": 19083, "backend": 0, "probe": ("/", {200}), "pidfile": "C4-6-thymeleaf.pid"},
 }
 
 GROUPS = {
@@ -473,7 +474,7 @@ def start_site(name: str) -> bool:
 
     # C4 中间件（Redis / MinIO / RocketMQ），由 c4_start.py 统一管理
     if name.startswith("C4-"):
-        comp = {"C4-1": "redis", "C4-2": "minio", "C4-3": "rocketmq", "C4-4": "jmreport", "C4-5": "gen"}[name]
+        comp = {"C4-1": "redis", "C4-2": "minio", "C4-3": "rocketmq", "C4-4": "jmreport", "C4-5": "gen", "C4-6": "thymeleaf"}[name]
         return subprocess.call([sys.executable, os.path.join(SCRIPTS, "c4_start.py"), "start", comp], cwd=ROOT) == 0
 
     # C2 / C3 / D1 / A2
@@ -562,7 +563,7 @@ def cmd_down(names: list[str]) -> int:
         elif n == "C2-3":
             subprocess.call([sys.executable, os.path.join(SCRIPTS, "c2_scf.py"), "stop"], cwd=ROOT)
         elif n.startswith("C4-"):
-            comp = {"C4-1": "redis", "C4-2": "minio", "C4-3": "rocketmq", "C4-4": "jmreport", "C4-5": "gen"}[n]
+            comp = {"C4-1": "redis", "C4-2": "minio", "C4-3": "rocketmq", "C4-4": "jmreport", "C4-5": "gen", "C4-6": "thymeleaf"}[n]
             subprocess.call([sys.executable, os.path.join(SCRIPTS, "c4_start.py"), "stop", comp], cwd=ROOT)
         elif n == "C3":
             subprocess.call([sys.executable, os.path.join(SCRIPTS, "c3_honeypot.py"), "stop"], cwd=ROOT)
