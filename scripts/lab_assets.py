@@ -57,6 +57,11 @@ ASSETS: dict[str, list[tuple[str, str, str]]] = {
             os.path.join("ui", ".git"),
             "前端构建时漏删的 .git（Nginx 根路径直出静态文件，匿名可读）",
         ),
+        (
+            "R7-ui-scmsvn",
+            "ui",
+            "从 SVN 迁移到 Git 时漏删的 .svn/.idea（2024 年那次迁移的残留）",
+        ),
     ],
 }
 
