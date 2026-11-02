@@ -1,0 +1,41 @@
+# C5「暴露但需认证」（v1.6 靶场，docs/_plan_v1.6_labs.md P0）
+#
+# 存在的理由
+# ==========
+# v1.6 给未授权类插件加了会话隔离 + looks_authenticated 第二道防线，
+# 但**现有靶场没有任何一座能复现该边界**：
+#   - R1/R7 的相关端点根本不存在（登录后仍 302）
+#   - C1/C2 的 actuator 本来就未授权暴露（是正样本，不是这一类）
+# 没有 C5，A2 的 looks_authenticated 就是一行没被验证过的代码。
+#
+# 形态
+# ====
+# 后端 C2-1b（真实 Spring Boot，/actuator/env 真实暴露 34KB）
+# ↑ 前面加一层 HTTP Basic 认证
+# → 接口**真实存在**，但**必须认证**才能访问。
+#
+# 预期结论（这是本靶场的判据）
+#   - 未认证扫描：SAFE（401，不能判「不存在」但也拿不到暴露证据）
+#   - **已认证扫描：不得 CONFIRMED**，应为 UNKNOWN（响应疑似已认证）或 SAFE
+# 若已认证扫描报出 CONFIRMED「Actuator 未授权访问」，就是 A2 的防线失效。
+#
+# 端口用 19351（避开 C1 的 193xx / C2 的 1931x 段）。
+server {
+    listen 19351;
+    server_name 127.0.0.1;
+    client_max_body_size 20m;
+
+    access_log logs/C5_access.log main;
+
+    auth_basic "Ops Console";
+    auth_basic_user_file ../c5.htpasswd;
+
+    location / {
+        proxy_pass http://127.0.0.1:19312;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Port $server_port;
+    }
+}

@@ -196,6 +196,9 @@ SITES: dict[str, dict] = {
     "C2-3":  {"group": "component", "entry": 19314, "backend": 0, "probe": ("/", {200, 404}), "pidfile": "C2-scf.pid"},
 
     # ── 特殊形态 ──
+    # C5「暴露但需认证」：nginx basic auth 挡在 C2-1b（真实 Actuator）前面。
+    # 探针用 401：未认证时**应该**被拒，这正是该站点的形态。
+    "C5":  {"group": "special", "entry": 19351, "backend": 19312, "probe": ("/actuator/env", {401}), "pidfile": "C5.pid"},
     "C3":  {"group": "special", "entry": 19331, "backend": 0, "probe": ("/", {200}), "pidfile": "C3.pid"},
     "D1":  {"group": "special", "entry": 19321, "backend": 19221, "probe": ("/portal/auth/signin", {200}), "pidfile": "D1.pid"},
     "A2":  {"group": "special", "entry": 19341, "backend": 19241, "probe": ("/login", {200, 302}), "pidfile": "A2.pid"},
@@ -220,7 +223,7 @@ GROUPS = {
     "holdout": ["R13"],
     "component": [k for k in SITES if k.startswith("C") and not k.startswith("C4-")],
     "middleware": [k for k in SITES if k.startswith("C4-")],
-    "special": ["C3", "D1", "A2"],
+    "special": ["C3", "D1", "A2", "C5"],
     "r1-r5": ["R1", "R2", "R3", "R4", "R5"],
     "vue": ["R6", "R7", "R9", "R10"],
 }
@@ -560,6 +563,7 @@ def start_site(name: str) -> bool:
         "C2-1a": ("c2_sba.py", "start"), "C2-1b": ("c2_sba.py", "start"),
         "C2-2": ("c2_s4s.py", "start"), "C2-3": ("c2_scf.py", "start"),
         "C3": ("c3_honeypot.py", "start"), "D1": ("d1_start.py", "start"), "A2": ("a2_start.py", "start"),
+        "C5": ("c5_start.py", "start"),
     }
     if name in special:
         script, sub = special[name]
