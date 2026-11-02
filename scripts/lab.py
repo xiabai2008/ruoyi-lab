@@ -88,6 +88,42 @@ def _find_mysql_ini() -> str:
 
 
 MYSQL_INI = _find_mysql_ini()
+
+
+def _ascii_mysql_ini(ini_path: str) -> str:
+    """把 my.ini 复制到一个纯 ASCII 路径再返回，规避 mysqld 的中文路径问题。
+
+    为什么需要（2026-11-02 实测）：仓库路径 `C:\\Users\\HZR\\Desktop\\若依系统`
+    含中文，把它作为 `--defaults-file=` 传给 mysqld 时会被**截断成**
+    `C:\\Users\\HZR\\Desktop\\`，直接报：
+        mysqld: [ERROR] Failed to open required defaults file: C:\\Users\\HZR\\Desktop\\
+        mysqld: [ERROR] Fatal error in defaults handling. Program aborted!
+    表现为 `lab.py up infra:mysql` 静默失败、R1-R13 全部 502。
+
+    注意 ini 里的 datadir 本身没问题——那份配置的注释已经写明
+    「MySQL 8.0 on Windows cannot open a datadir containing non-ASCII characters」，
+    datadir 特意放在了 C:/Users/HZR/ry_r2_mysql/data。**只有 --defaults-file 这条路受影响。**
+
+    处理：路径含非 ASCII 时复制到 %TEMP%\\lab_mysql\\my.ini（纯 ASCII）。
+    """
+    try:
+        ini_path.encode("ascii")
+        return ini_path  # 纯 ASCII，直接用
+    except UnicodeEncodeError:
+        pass
+    import shutil
+    import tempfile
+
+    dst_dir = os.path.join(tempfile.gettempdir(), "lab_mysql")
+    os.makedirs(dst_dir, exist_ok=True)
+    dst = os.path.join(dst_dir, "my.ini")
+    try:
+        shutil.copy2(ini_path, dst)
+        print(f"[..] my.ini 含非 ASCII 路径，已复制到 {dst}（mysqld 无法解析中文 --defaults-file）")
+        return dst
+    except Exception as e:  # noqa: BLE001
+        print(f"[!]复制 my.ini 失败，将尝试原路径: {e}")
+        return ini_path
 REDIS_DIR = os.environ.get("LAB_REDIS_DIR", os.path.join(ROOT, "tools", "redis"))
 
 FLAGS = 0
@@ -445,7 +481,7 @@ def start_infra(name: str) -> bool:
         if not os.path.exists(MYSQL_INI):
             print(f"[FAIL] 找不到 {MYSQL_INI}")
             return False
-        pid = _spawn([MYSQLD, f"--defaults-file={MYSQL_INI}"], ROOT, "mysql/boot.log")
+        pid = _spawn([MYSQLD, f"--defaults-file={_ascii_mysql_ini(MYSQL_INI)}"], ROOT, "mysql/boot.log")
         print(f"[..] MySQL 启动中 pid={pid}")
         return _wait(lambda: port_open(13307), 60, "MySQL")
 
