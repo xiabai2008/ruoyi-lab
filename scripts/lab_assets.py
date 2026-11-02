@@ -62,6 +62,11 @@ ASSETS: dict[str, list[tuple[str, str, str]]] = {
             "ui",
             "从 SVN 迁移到 Git 时漏删的 .svn/.idea（2024 年那次迁移的残留）",
         ),
+        (
+            "R7-ui-backup",
+            "ui",
+            "运维留在 web 目录的旧版本文件（index.bak / config.old，可预测名，命中插件字典）",
+        ),
     ],
 }
 

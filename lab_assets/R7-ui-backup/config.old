@@ -1,0 +1,2 @@
+// 2024 年上线前的前端环境配置（已被打包进 app.js，此文件是运维留在服务器上的旧拷贝）
+window.__CONFIG__ = {baseURL: "/prod-api", title: "明德教务管理系统", env: "production"};

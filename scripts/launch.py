@@ -133,6 +133,21 @@ def main() -> int:
     # R10 漏洞演示模式：--lab.mode 既等价于 -Dlab.mode，走 Spring 环境属性，默认 safe
     if site == "R10" and lab_mode:
         cmd.append("--lab.mode=%s" % lab_mode)
+    # R9（RuoYi-Vue-Plus）误配模式（v1.5.6 WP3）：
+    #   safe（默认）= 生产规范配置，/monitor/** 在 Sa-Token 拦截范围内 → 插件判 SAFE 正确
+    #   vuln        = 真实误配现场：把 /monitor/** 加进 security.excludes 白名单，
+    #                 未登录即可访问定时任务管理接口
+    #
+    # 用环境变量注入 spring 配置（等价于运维在 application.yml 里写错），不改源码——
+    # 「误配」本来就该以配置形态出现，改源码就成了另一个漏洞。
+    #
+    # 为什么不用 --security.excludes[9]=... ：该属性绑定为 String[]，
+    # 命令行索引形式实测被拒（APPLICATION FAILED TO START: elements were left unbound）。
+    # 而 --security.excludes=/monitor/** 会**整体替换**掉原有 8 条排除项，
+    # 把静态资源也一起放开，靶场形态跑偏。
+    # SPRING_APPLICATION_JSON 的数组是追加语义，只多一条 /monitor/**，其余不变。
+    if site == "R9" and lab_mode == "vuln":
+        env["SPRING_APPLICATION_JSON"] = '{"security":{"excludes":["/monitor/**"]}}'
     cmd.extend(extra_args)
 
     with open(log, "ab") as f_out, open(err, "ab") as f_err:
@@ -151,7 +166,9 @@ def main() -> int:
     os.makedirs(os.path.dirname(pidfile), exist_ok=True)
     with open(pidfile, "w") as f:
         f.write(str(proc.pid))
-    mode_note = (" lab.mode=%s" % lab_mode) if (site == "R10" and lab_mode) else ""
+    # R9 用同一个 --lab-mode 开关，提示里也要标出来，否则运维看不出当前是误配版
+    mode_site = site in ("R10", "R9")
+    mode_note = (" lab.mode=%s" % lab_mode) if (mode_site and lab_mode) else ""
     print("[OK] %s launched pid=%s port=%s%s" % (site, proc.pid, port, mode_note))
     print("[OK] logs: %s / %s" % (log, err))
     return 0

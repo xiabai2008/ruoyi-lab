@@ -836,8 +836,9 @@ def main() -> int:
     argv = sys.argv[1:]
     if not argv:
         return usage()
-    # R10 漏洞演示模式开关（--lab-mode safe|vuln），通过 LAB_MODE 环境变量透传给 launch.py。
-    # 只有 R10 认这个开关，其它站点启动参数不受影响；默认不加 = safe。
+    # 漏洞/误配演示模式开关（--lab-mode safe|vuln），通过 LAB_MODE 环境变量透传给 launch.py。
+    # 认这个开关的站点：R10（JeecgBoot 漏洞演示模块）、R9（Plus /monitor 未授权误配）。
+    # 其它站点启动参数不受影响；默认不加 = safe。
     lab_mode = ""
     normalized = []
     index = 0
@@ -853,7 +854,7 @@ def main() -> int:
             print("[ERROR] --lab-mode 只能是 safe 或 vuln，实际: %s" % lab_mode)
             return 2
         os.environ["LAB_MODE"] = lab_mode
-        print("[..] R10 漏洞演示模式: %s（启动 R10 时以 --lab.mode=%s 传入 JVM）" % (lab_mode, lab_mode))
+        print("[..] 漏洞/误配演示模式: %s（R10 走 --lab.mode，R9 走 security.excludes 覆盖）" % lab_mode)
     argv = normalized
     if not argv:
         return usage()
