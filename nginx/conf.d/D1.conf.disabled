@@ -30,10 +30,20 @@ server {
     # 过滤链负责。漏洞版（lab.mode=vuln）把 /openapi/** 加进 Shiro anon 白名单
     # 后，这两条老路径即被匿名访问；safe 模式下匿名请求仍被 302 到登录页。
     #
-    # 只映射精确路径、不做前缀映射：D1 的其它 /monitor/**、/tool/gen/** 路径
-    # 维持 404，避免改变站点既有形态（如扫描器的上下文前缀发现逻辑依赖
-    # /monitor/job/list 在根路径 404）。
-    location = /monitor/job/edit {
+    # 2026-11-02（v1.5.6 WP1）调整：原先映射写在 /portal/ **之外**
+    # （location = /monitor/job/edit），那是为了迁就「扫描器认不出 /portal」这个
+    # 扫描器缺陷。WP1 补上 context-path 识别后，扫描器会正确探
+    # /portal/monitor/job/edit——而这条路径当时没有映射，导致 job RCE 从
+    # CONFIRMED 回退成 UNKNOWN（探测位置对了，靶场形态没跟上）。
+    #
+    # 现在映射收敛到 context-path **之内**，与真实二开部署的运维网关形态一致：
+    # 外部按 context-path 内的短路径调用，网关 rewrite 到 /openapi/**。
+    # 扫描器探 /portal/monitor/job/edit → 网关 rewrite → /portal/openapi/monitor/job/edit。
+    #
+    # 注意 location 的匹配优先级：前缀匹配 location /portal/ 与下面这些精确/长前缀
+    # location 并存时，nginx 用「最长前缀优先」+ 精确匹配优先，因此这些块必须写在
+    # /portal/ 之后仍能生效（nginx 会先选最长匹配的 location 块）。
+    location = /portal/monitor/job/edit {
         proxy_pass http://127.0.0.1:19221/portal/openapi/monitor/job/edit;
         proxy_redirect http://127.0.0.1:19221/ /;
         proxy_set_header Host $http_host;
@@ -43,7 +53,7 @@ server {
         proxy_set_header X-Forwarded-Port $server_port;
     }
 
-    location ^~ /tool/gen/preview/ {
+    location ^~ /portal/tool/gen/preview/ {
         proxy_pass http://127.0.0.1:19221/portal/openapi/tool/gen/preview/;
         proxy_redirect http://127.0.0.1:19221/ /;
         proxy_set_header Host $http_host;
