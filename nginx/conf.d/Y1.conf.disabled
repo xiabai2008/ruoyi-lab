@@ -1,0 +1,28 @@
+# Y1（v1.6 靶场）：芋道 yudao 真实站。
+#
+# 为什么建它：v1.6 计划要把扫描器扩到芋道，但必须先有真实站验证
+# 两条前提（docs/_plan_v1.6_labs.md）——实测已确认：
+#   /admin-api/system/tenant/simple-list → 200（免鉴权探针可用）
+#   /v3/api-docs                        → 200 + 373KB（Swagger 暴露）
+#   /jmreport/list                      → 401 {"code":401,"msg":"账号未登录"}
+#
+# 最后一个尤其有价值：它是 **HTTP 200 + JSON 业务码** 的鉴权拒绝形态，
+# 正是 WP-U1（JSON 信封鉴权墙）要处理的场景，此前只能靠构造响应测试。
+#
+# 免费域名前缀 /admin-api 是芋道的固定形态，也是 WP-F0 新加的候选前缀。
+server {
+    listen 19115;
+    server_name 127.0.0.1;
+    client_max_body_size 100m;
+
+    access_log logs/Y1_access.log main;
+
+    location / {
+        proxy_pass http://127.0.0.1:19251;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Port $server_port;
+    }
+}
