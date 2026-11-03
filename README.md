@@ -74,6 +74,45 @@ C3 存在的唯一目的就是抓这种误报。
 
 完整清单与端口：[docs/靶场总览.md](docs/靶场总览.md)
 
+## 想拿它演示扫描器？用 `demo.py`
+
+如果目的是**给 ruoyi-scan 做现场演示**，不用起全部 32 座。一条命令起 3 座，20 秒就绪：
+
+```bash
+python scripts\demo.py up       # 起 R1 / R11 / C3（自动带上 MySQL + Redis + Nginx）
+python scripts\demo.py status   # 状态 + 演示命令提示
+python scripts\demo.py down     # 全部停止
+```
+
+选这 3 座是因为它们**分别对应三种判定结果**，讲起来有对比：
+
+| 站点 | 演示角色 | 预期输出 |
+|---|---|---|
+| **R1** | 真实若依 4.5.1，6 条真漏洞 | 6 × CONFIRMED + 4 × UNKNOWN |
+| **R11** | 自建 Spring Boot，非若依目标 | 全 SAFE（负样本，证明不瞎报） |
+| **C3** | 蜜罐，假文件真实存在 | 2 × CONFIRMED（A 类诱饵，判定正确） |
+
+扫描器侧命令（在 ruoyi-scan 目录执行）：
+
+```bash
+# 主力演示：认证扫描，实测 6 个高危
+python main.py -u http://127.0.0.1:19101 ^
+    --auth-login admin:admin123 ^
+    --surface-account scanner_low:LowPriv_2026 ^
+    --report artifacts/demo/R1 --no-pause --no-cta
+
+# 对照：不是若依就不报
+python main.py -u http://127.0.0.1:19111 --no-pause --no-cta
+```
+
+> **R1 的验证码需要 `pip install ddddocr`**（扫描器侧依赖，靶场不需要）。
+> 没装的话 `--auth-login` 会失败，6 条 CONFIRMED 会全部退化成 UNKNOWN。
+
+**讲解重点**：先跑一次不带 `--auth-login` 的扫描，满屏 UNKNOWN——说明它不会假装知道；
+加上凭据后 6 条 CONFIRMED 出现。真正值得讲的是「部门树越权访问」那条 **UNKNOWN**：
+低权账号登录成功了、接口也确实执行了，但没有返回任何部门数据，**空列表证明不了越权，所以不判**。
+三态判定的价值就在这种地方。
+
 ## 快速开始
 
 ### 前置条件
@@ -252,7 +291,7 @@ Y1 建成后立刻在扫描器侧发现了两个真缺陷，这是它存在的�
 ├─ lab_assets/         真实感诱饵（遗留 SQL、漏删的 .git）
 ├─ nginx/conf.d/       每站一个 conf，191xx/193xx 反代到 192xx
 ├─ seed/ db/           业务数据种子与建库脚本
-├─ scripts/            启停与自检（lab.py 是统一入口，shots.py 出截图）
+├─ scripts/            启停与自检（lab.py 统一入口、demo.py 演示、shots.py 截图）
 ├─ docs/               站点说明、设计文档、截图
 └─ .state/             运行时状态（pid / 日志，不进版本控制）
 ```
