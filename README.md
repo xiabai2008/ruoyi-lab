@@ -106,6 +106,8 @@ python scripts\lab.py down R2
 | R1–R5、R12 | `scanner_low` / `LowPriv_2026` | 低权账号，用于越权矩阵测试 |
 | C4-2 MinIO | `minioadmin` / `minioadmin` | 官方默认凭据 |
 | C4-3 RocketMQ | 无鉴权 | 官方默认无登录 |
+| **C5** 暴露但需认证 | `c5ops` / `Ops_2026_Letmein` | HTTP Basic，nginx `auth_basic`（v1.6 新增） |
+| **Y1** 芋道 yudao | `admin` / `admin123` | 芋道官方默认；Druid 控制台 `login-username` **留空**（默认即无鉴权） |
 
 **这些口令是故意保留的** —— 靶场就是要能被打。它们全是产品官方默认值，不是真实凭据。
 
