@@ -243,7 +243,13 @@ def build(sites: list[str], out_dir: str) -> int:
 
 
 def _write_bootstrap(pack: str) -> None:
-    """生成 START-HERE.bat：第一次运行时自愈路径，然后启动。"""
+    """生成 START-HERE.bat：第一次运行时自愈路径，然后启动。
+
+    注意：调用 Python 一律走 scripts\\find-Python.bat 解析出的 %PYEXE%，
+    不能直接写 `python` —— Windows 上 PATH 第一个 python 可能是应用商店的
+    0 字节存根，一运行就报「系统找不到文件」。这个问题在开发机上已经踩过一次
+    （见 scripts/find-Python.bat 顶部说明）。
+    """
     bat = r"""@echo off
 chcp 65001 >nul
 setlocal EnableExtensions
@@ -255,15 +261,31 @@ echo   R1 lab - first run will fix paths for this machine
 echo ============================================================
 echo.
 
-REM 自愈：把 my.ini 的 datadir、lab.local.json 的外部依赖路径
-REM 按这台机器的实际位置重写一遍。破折号不写注释，用 REM。
+call "%~dp0scripts\find-Python.bat"
+if not defined PYEXE (
+    echo [FAIL] No working Python found.
+    echo.
+    echo   This package needs Python 3.8+ to run.
+    echo   Install it from https://www.python.org/downloads/
+    echo   and tick "Add Python to PATH" during setup, then re-run this file.
+    echo.
+    echo   Note: the Microsoft Store "python" stub does not count - it is
+    echo   skipped on purpose because it fails when the Store app is absent.
+    echo.
+    pause
+    exit /b 1
+)
+echo [..] Python: %PYEXE%
+echo.
+
 if not exist ".packed-ok" (
     echo [1/2] Fixing paths for this machine...
-    python scripts\pack.py --unpack
+    "%PYEXE%" scripts\pack.py --unpack
     if errorlevel 1 (
         echo.
-        echo [FAIL] Path fix failed. Is Python installed and on PATH?
-        echo        Try:  python --version
+        echo [FAIL] Path fix failed - see output above.
+        echo        Usually means JDK8 or MySQL 8 was not found.
+        echo        Install them, or edit lab.local.json by hand.
         pause
         exit /b 1
     )
@@ -274,7 +296,7 @@ if not exist ".packed-ok" (
 
 echo.
 echo [2/2] Starting R1...
-python scripts\lab.py up R1
+"%PYEXE%" scripts\lab.py up R1
 if errorlevel 1 (
     echo.
     echo [FAIL] Start failed - see output above.
@@ -287,7 +309,7 @@ echo   R1 is ready: http://127.0.0.1:19101   (admin / admin123)
 start "" "http://127.0.0.1:19101"
 echo.
 echo   Closing this window does NOT stop the lab.
-echo   To stop: python scripts\lab.py down R1
+echo   To stop, run:  "%PYEXE%" scripts\lab.py down R1
 pause
 """
     p = os.path.join(pack, "START-HERE.bat")

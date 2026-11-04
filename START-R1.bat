@@ -15,8 +15,27 @@ echo   First start takes ~25s (MySQL + Redis + Nginx first)
 echo ============================================================
 echo.
 
+rem Resolve a python that actually runs. Plain `python` may hit the broken
+rem WindowsApps stub that sits first in PATH (see scripts\find-Python.bat).
+call "%~dp0scripts\find-Python.bat"
+if not defined PYEXE (
+    echo [FAIL] No working Python found.
+    echo.
+    echo   Looked in: lab.local.json, common install dirs, and PATH.
+    echo   The WindowsApps\python.exe stub is skipped on purpose - it is
+    echo   broken when the Store version is not installed.
+    echo.
+    echo   Fix: install Python 3.8+ from https://www.python.org/downloads/
+    echo        then double-click this file again.
+    echo.
+    pause
+    exit /b 1
+)
+echo [..] Python: %PYEXE%
+echo.
+
 rem If 19101 is already listening, skip start and just open the browser.
-python -c "import socket,sys; s=socket.socket(); s.settimeout(0.5); sys.exit(0 if s.connect_ex(('127.0.0.1',19101))==0 else 1)" 2>nul
+"%PYEXE%" -c "import socket,sys; s=socket.socket(); s.settimeout(0.5); sys.exit(0 if s.connect_ex(('127.0.0.1',19101))==0 else 1)" 2>nul
 if not errorlevel 1 (
     echo [INFO] Port 19101 already listening - R1 may already be running.
     echo        Opening browser. If the page is a 502, use STOP-R1.bat first.
@@ -26,15 +45,15 @@ if not errorlevel 1 (
     exit /b 0
 )
 
-python scripts\lab.py up R1
+"%PYEXE%" scripts\lab.py up R1
 if errorlevel 1 (
     echo.
     echo [FAIL] Start failed - see the output above.
     echo.
     echo Common causes:
-    echo   1. Python not installed or not in PATH
-    echo   2. jar not built - run scripts\00_probe.bat to check the environment
-    echo   3. port already taken by another program
+    echo   1. jar not built - run scripts\00_probe.bat to check the environment
+    echo   2. port already taken by another program
+    echo   3. JDK8 or MySQL missing - see docs\打包到另一台电脑.md
     echo.
     pause
     exit /b 1
