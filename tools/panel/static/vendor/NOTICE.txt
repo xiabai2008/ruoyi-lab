@@ -1,0 +1,11 @@
+本目录为管理平台前端运行时依赖，均为 MIT License：
+
+- Vue.js v3.5.45
+  https://github.com/vuejs/core
+  File: vue.global.prod.js
+
+- Element Plus v2.14.8
+  https://github.com/element-plus/element-plus
+  Files: element-plus.full.min.js, element-plus.css, element-plus-dark.css
+
+下载来源：unpkg.com，2026-11-18。完整许可证见上游仓库。

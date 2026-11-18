@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark style-steady">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script>
+    (function () {
+      try {
+        var mode = localStorage.getItem("panel-theme") || "dark";
+        var styleName = localStorage.getItem("panel-style") || "steady";
+        document.documentElement.className =
+          (mode === "dark" ? "dark" : "light") + (styleName === "steady" ? " style-steady" : "");
+      } catch (e) {}
+    })();
+  </script>
+  <title>若依靶场管理平台</title>
+  <link rel="stylesheet" href="/static/vendor/element-plus.css">
+  <link rel="stylesheet" href="/static/vendor/element-plus-dark.css">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="app" v-cloak>
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">若</div>
+        <div class="brand-text">
+          <h1>若依靶场管理平台</h1>
+          <div class="subtitle"><span class="mono">{{ labRoot || '...' }}</span><span class="sep">·</span>{{ targets.length }} 个管理对象</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div class="status-age" :class="{ stale: statusStale }">
+          <span class="pulse" :class="{ on: sseConnected }"></span>
+          <span>{{ statusAgeText }}</span>
+        </div>
+        <el-button size="small" @click="refreshAll" :loading="loading">刷新状态</el-button>
+        <el-button size="small" @click="rescan" :loading="scanning">重新扫描构建</el-button>
+        <el-button size="small" @click="cleanZombies" :loading="cleaning">清理僵尸 PID</el-button>
+        <el-button size="small" type="danger" plain @click="confirmStopAll">全部停止</el-button>
+        <el-button size="small" @click="historyOpen = true">操作历史</el-button>
+        <el-popover placement="bottom-end" :width="260" trigger="click" popper-class="theme-popover">
+          <template #reference>
+            <button class="icon-btn" title="主题设置">◐</button>
+          </template>
+          <div class="theme-settings">
+            <div class="theme-title">主题设置</div>
+            <div class="theme-row">
+              <span>外观</span>
+              <div class="seg">
+                <button :class="{ active: theme === 'dark' }" @click="setMode('dark')">深色</button>
+                <button :class="{ active: theme === 'light' }" @click="setMode('light')">浅色</button>
+              </div>
+            </div>
+            <div class="theme-row">
+              <span>风格</span>
+              <div class="seg">
+                <button :class="{ active: themeStyle === 'steady' }" @click="setStyle('steady')">沉稳</button>
+                <button :class="{ active: themeStyle === 'neon' }" @click="setStyle('neon')">炫酷</button>
+              </div>
+            </div>
+            <p class="theme-hint">{{ themeStyle === 'steady' ? '低饱和石墨色，减少高亮和辉光，适合长时间盯屏。' : '保留当前的高对比霓虹风格，信息层级更跳。' }}</p>
+          </div>
+        </el-popover>
+      </div>
+    </header>
+
+    <section class="summary-row">
+      <div v-for="s in summaryStats" :key="s.key" class="stat" :class="'stat-' + s.key">
+        <div class="stat-value">{{ s.value }}</div>
+        <div class="stat-label">{{ s.label }}</div>
+        <div class="stat-hint">{{ s.hint }}</div>
+      </div>
+      <div class="env-card">
+        <div class="env-head">
+          <span>环境自检</span>
+          <button class="mini" @click="rescan" :disabled="scanning">重扫</button>
+        </div>
+        <div class="env-chips">
+          <el-tooltip v-for="e in environment" :key="e.key" :content="e.path || e.label" placement="top">
+            <span class="env-chip" :class="e.ok ? 'ok' : (e.required ? 'bad' : 'warn')">
+              <i></i>{{ e.label }}
+            </span>
+          </el-tooltip>
+        </div>
+      </div>
+    </section>
+
+    <section class="toolbar">
+      <div class="tabs">
+        <button v-for="g in groupTabs" :key="g.key" class="tab" :class="{ active: activeGroup === g.key }" @click="activeGroup = g.key">
+          {{ g.label }}<span class="tab-count">{{ g.count }}</span>
+        </button>
+      </div>
+      <div class="filters">
+        <el-input v-model="search" size="small" clearable placeholder="搜索编号 / 业务 / 端口" style="width: 220px" />
+        <label class="switch"><input type="checkbox" v-model="onlyRunning"><span>只看运行中</span></label>
+        <label class="switch"><input type="checkbox" v-model="onlyProblem"><span>只看异常</span></label>
+      </div>
+    </section>
+
+    <div class="group-bar" v-if="currentGroup && currentGroup.key !== 'all'">
+      <div class="group-note"><b>{{ currentGroup.label }}</b><span class="sep">·</span>{{ currentGroup.note }}</div>
+      <div class="group-actions">
+        <el-button size="small" @click="startGroup(currentGroup)" :loading="groupBusy === currentGroup.key">启动本组</el-button>
+        <el-button size="small" @click="stopGroup(currentGroup)">停止本组</el-button>
+      </div>
+    </div>
+
+    <main class="grid" v-loading="initialLoading">
+      <article v-for="t in filteredTargets" :key="t.id" class="card" :class="'card-' + stateOf(t)">
+        <div class="card-head">
+          <div class="card-id">{{ t.id }}</div>
+          <div class="card-title">
+            <h2>{{ t.name }}</h2>
+            <div class="card-sub">{{ t.business }}</div>
+          </div>
+          <span class="state-pill" :class="'pill-' + stateOf(t)"><i></i>{{ stateLabel(t) }}</span>
+        </div>
+
+        <div class="card-meta">
+          <div><span>入口</span><b>{{ t.entry || '—' }}</b></div>
+          <div><span>后端</span><b>{{ t.backend || '—' }}</b></div>
+          <div><span>构建</span><b :class="'build-' + t.build.state">{{ buildLabel(t.build.state) }}</b></div>
+          <div><span>PID</span><b>{{ statusOf(t).pid || '—' }}</b></div>
+        </div>
+
+        <div class="card-url" v-if="t.url">
+          <a :href="t.url" target="_blank" rel="noreferrer" @click.prevent="openUrl(t)">{{ t.url }}</a>
+          <button class="mini" @click="openUrl(t)">打开</button>
+        </div>
+
+        <div class="card-badges">
+          <span v-if="t.exclusive" class="tag tag-exclusive">独占</span>
+          <span v-if="t.pair_id" class="tag tag-pair">C2 同生命周期</span>
+          <span v-if="t.group === 'holdout'" class="tag tag-holdout">hold-out</span>
+          <span v-if="statusOf(t).operation_state" class="tag tag-op">{{ stateLabel(t) }}</span>
+        </div>
+
+        <div class="card-warning bad" v-if="t.build.missing && t.build.missing.length">
+          <span class="dot bad"></span>缺 {{ t.build.missing.length }} 项：{{ t.build.missing[0].label }}
+        </div>
+        <div class="card-warning warn" v-else-if="t.build.warnings && t.build.warnings.length">
+          <span class="dot warn"></span>{{ t.build.warnings[0] }}
+        </div>
+
+        <div class="card-notes" v-if="t.notes.length">
+          <span v-for="n in t.notes.slice(0, 2)" :key="n">{{ n }}</span>
+        </div>
+
+        <div class="card-foot">
+          <span class="detail-text">{{ statusOf(t).display_reason || statusOf(t).detail || '尚未检测' }}</span>
+        </div>
+
+        <div class="card-actions">
+          <el-button size="small" type="primary" :disabled="!canStart(t)" :loading="stateOf(t) === 'STARTING' || stateOf(t) === 'QUEUED'" @click="startTarget(t)">启动</el-button>
+          <el-button size="small" :disabled="!canStop(t)" :loading="stateOf(t) === 'STOPPING'" @click="stopTarget(t)">停止</el-button>
+          <el-button size="small" text @click="openDetail(t)">详情</el-button>
+        </div>
+      </article>
+
+      <div v-if="!filteredTargets.length" class="empty">
+        <div class="empty-icon">⌕</div>
+        <p>{{ targets.length ? '没有匹配的靶场' : '正在加载靶场清单...' }}</p>
+      </div>
+    </main>
+
+    <div class="dock" v-if="dockOp" :class="{ expanded: showLog }">
+      <div class="dock-head">
+        <div class="dock-title">
+          <span class="state-pill" :class="'pill-' + dockStatus"><i></i>{{ dockStatusLabel }}</span>
+          <b>{{ dockOp.title }}</b>
+          <span class="dock-sub">{{ dockOp.step_done }}/{{ dockOp.step_total }} 步 · {{ dockOp.progress }}%</span>
+        </div>
+        <div class="dock-actions">
+          <el-button size="small" text @click="showLog = !showLog">{{ showLog ? '收起日志' : '展开日志' }}</el-button>
+          <el-button size="small" text :disabled="!currentLogs.length" @click="downloadLog">下载日志</el-button>
+          <el-button size="small" text type="danger" v-if="dockOp.cancellable" @click="cancelOp(dockOp)">取消排队</el-button>
+          <el-button size="small" text v-if="!isOpActive(dockOp)" @click="dismissDock">关闭</el-button>
+        </div>
+      </div>
+
+      <div class="progress"><div class="progress-bar" :style="{ width: (dockOp.progress || 0) + '%' }"></div></div>
+
+      <div class="dock-steps">
+        <div v-for="s in dockOp.steps" :key="s.id" class="step" :class="'step-' + s.status">
+          <span class="step-icon">{{ stepIcon(s.status) }}</span>
+          <span class="step-target">{{ s.target }}</span>
+          <span class="step-action">{{ s.action === 'start' ? '启动' : s.action === 'stop' ? '停止' : '清理' }}</span>
+          <span class="step-msg">{{ s.message }}</span>
+        </div>
+      </div>
+
+      <div class="dock-queue" v-if="queuedOps.length">
+        排队中：<span v-for="q in queuedOps" :key="q.id">{{ q.title }}</span>
+      </div>
+
+      <div class="log-wrap" v-if="showLog">
+        <div class="log-toolbar">
+          <label class="switch"><input type="checkbox" v-model="autoScroll"><span>自动滚动</span></label>
+          <span class="log-count">{{ currentLogs.length }} 行</span>
+          <button class="mini" @click="copyLog">复制</button>
+        </div>
+        <pre class="log" ref="logEl">{{ currentLogs.length ? currentLogs.join('\n') : '等待日志...' }}</pre>
+      </div>
+    </div>
+
+    <el-drawer v-model="drawerOpen" :title="detailTitle" size="580px" destroy-on-close class="detail-drawer">
+      <div v-if="detailTarget" class="detail">
+        <div class="detail-tabs">
+          <button v-for="tab in detailTabs" :key="tab.key" :class="{ active: detailTab === tab.key }" @click="detailTab = tab.key">{{ tab.label }}</button>
+        </div>
+
+        <div v-if="detailTab === 'overview'" class="detail-body">
+          <div class="kv-grid">
+            <div><span>状态</span><b :class="'text-' + stateOf(detailTarget)">{{ stateLabel(detailTarget) }}</b></div>
+            <div><span>构建</span><b :class="'build-' + detailTarget.build.state">{{ buildLabel(detailTarget.build.state) }}</b></div>
+            <div><span>入口</span><b>{{ detailTarget.entry || '—' }}</b></div>
+            <div><span>后端</span><b>{{ detailTarget.backend || '—' }}</b></div>
+            <div><span>PID</span><b>{{ statusOf(detailTarget).pid || '—' }}</b></div>
+            <div><span>探测</span><b>{{ probeText(detailTarget) }}</b></div>
+          </div>
+
+          <div class="detail-row" v-if="detailTarget.url">
+            <span>入口 URL</span><a :href="detailTarget.url" target="_blank" rel="noreferrer">{{ detailTarget.url }}</a>
+          </div>
+          <div class="detail-row"><span>启动命令</span><code>{{ detailTarget.start_command }}</code></div>
+          <div class="detail-row"><span>停止命令</span><code>{{ detailTarget.stop_command }}</code></div>
+
+          <div class="detail-section" v-if="detailTarget.credentials.length">
+            <h3>凭据</h3>
+            <div v-for="c in detailTarget.credentials" :key="c.label + c.username" class="cred">
+              <span>{{ c.label }}</span>
+              <code>{{ credText(c) }}</code>
+              <button class="mini" @click="copy(credText(c))">复制</button>
+            </div>
+          </div>
+
+          <div class="detail-section">
+            <h3>状态说明</h3>
+            <p class="muted">{{ statusOf(detailTarget).display_reason || '尚未检测' }}</p>
+            <p class="muted" v-if="statusOf(detailTarget).detail">{{ statusOf(detailTarget).detail }}</p>
+            <p class="muted" v-if="statusOf(detailTarget).warning">{{ statusOf(detailTarget).warning }}</p>
+          </div>
+
+          <div class="detail-actions">
+            <el-button size="small" type="primary" :disabled="!canStart(detailTarget)" @click="startTarget(detailTarget)">启动</el-button>
+            <el-button size="small" :disabled="!canStop(detailTarget)" @click="stopTarget(detailTarget)">停止</el-button>
+            <el-button size="small" text v-if="detailTarget.url" @click="openUrl(detailTarget)">打开入口</el-button>
+          </div>
+        </div>
+
+        <div v-if="detailTab === 'build'" class="detail-body">
+          <div class="build-head">
+            <span class="state-pill" :class="'pill-' + (detailTarget.build.state === 'ready' ? 'RUNNING' : detailTarget.build.state === 'partial' ? 'DEGRADED' : 'NOT_READY')">
+              <i></i>{{ buildLabel(detailTarget.build.state) }}
+            </span>
+            <span class="muted">{{ detailTarget.build.required_ok }}/{{ detailTarget.build.required_total }} 项必需产物</span>
+          </div>
+          <p class="build-hint">{{ detailTarget.build.hint }}</p>
+
+          <div class="check-list">
+            <div v-for="c in detailTarget.build.checks" :key="c.path" class="check" :class="{ ok: c.ok, bad: !c.ok && !c.optional }">
+              <span class="check-icon">{{ c.ok ? '✓' : (c.optional ? '○' : '✕') }}</span>
+              <div class="check-main">
+                <b>{{ c.label }}</b>
+                <code>{{ c.path }}</code>
+                <span class="muted" v-if="c.hint">{{ c.hint }}</span>
+              </div>
+              <span class="tag" v-if="c.optional">可选</span>
+            </div>
+          </div>
+
+          <div class="detail-section" v-if="detailTarget.build.source_checks.length">
+            <h3>源码</h3>
+            <div class="check-list">
+              <div v-for="c in detailTarget.build.source_checks" :key="c.path" class="check" :class="{ ok: c.ok, bad: !c.ok }">
+                <span class="check-icon">{{ c.ok ? '✓' : '✕' }}</span>
+                <div class="check-main"><b>{{ c.label }}</b><code>{{ c.path }}</code></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="detail-section" v-if="detailTarget.build.missing.length">
+            <h3>缺失项</h3>
+            <ul class="plain-list">
+              <li v-for="m in detailTarget.build.missing" :key="m.path"><code>{{ m.path }}</code></li>
+            </ul>
+          </div>
+
+          <div class="detail-section" v-if="detailTarget.build.warnings.length">
+            <h3>提示</h3>
+            <ul class="plain-list warn-list">
+              <li v-for="w in detailTarget.build.warnings" :key="w">{{ w }}</li>
+            </ul>
+          </div>
+        </div>
+
+        <div v-if="detailTab === 'deps'" class="detail-body">
+          <div class="detail-section">
+            <h3>依赖</h3>
+            <div class="chips" v-if="detailTarget.dependencies.length">
+              <button v-for="d in detailTarget.dependencies" :key="d" class="chip" @click="openTargetById(d)">{{ d }}</button>
+            </div>
+            <p class="muted" v-else>无显式依赖</p>
+          </div>
+          <div class="detail-section">
+            <h3>被依赖</h3>
+            <div class="chips" v-if="detailTarget.dependents.length">
+              <button v-for="d in detailTarget.dependents" :key="d" class="chip" @click="openTargetById(d)">{{ d }}</button>
+            </div>
+            <p class="muted" v-else>没有其他靶场依赖它</p>
+          </div>
+          <div class="detail-section">
+            <h3>备注</h3>
+            <ul class="plain-list">
+              <li v-for="n in detailTarget.notes" :key="n">{{ n }}</li>
+              <li v-if="!detailTarget.notes.length" class="muted">无</li>
+            </ul>
+          </div>
+          <div class="detail-section">
+            <h3>运行日志路径</h3>
+            <ul class="plain-list">
+              <li v-for="p in detailTarget.log_paths" :key="p"><code>{{ p }}</code></li>
+              <li v-if="!detailTarget.log_paths.length" class="muted">无映射日志，查看操作日志</li>
+            </ul>
+          </div>
+          <div class="detail-section">
+            <h3>生命周期</h3>
+            <p class="muted">{{ detailTarget.lifecycle }} · 分组 {{ detailTarget.group_label }}</p>
+            <p class="muted" v-if="detailTarget.pair_id">与同一 pair 的目标共享启动/停止生命周期。</p>
+            <p class="muted" v-if="detailTarget.exclusive">独占型：启动前会检查并建议停止其他靶场。</p>
+          </div>
+        </div>
+
+        <div v-if="detailTab === 'logs'" class="detail-body">
+          <div class="detail-section">
+            <div class="section-head">
+              <h3>运行日志</h3>
+              <button class="mini" @click="loadDetailLogs(detailTarget.id)">刷新</button>
+            </div>
+            <p class="muted" v-if="detailLogs.note">{{ detailLogs.note }}</p>
+            <div v-for="f in detailLogs.files" :key="f.path" class="log-file">
+              <div class="log-file-head">
+                <code>{{ f.path }}</code>
+                <span class="tag" v-if="f.truncated">仅末尾</span>
+                <button class="mini" @click="copy(f.lines.join('\n'))" :disabled="!f.lines.length">复制</button>
+              </div>
+              <pre class="log small">{{ f.lines.length ? f.lines.join('\n') : (f.exists ? '（空文件）' : '（文件不存在）') }}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-drawer>
+
+    <el-drawer v-model="historyOpen" title="操作历史" size="520px">
+      <div v-if="!operations.length" class="muted">还没有操作记录</div>
+      <div v-for="op in operations" :key="op.id" class="history-item" @click="openOperation(op)">
+        <div class="history-head">
+          <span class="state-pill" :class="'pill-' + historyPill(op)"><i></i>{{ historyLabel(op.status) }}</span>
+          <b>{{ op.title }}</b>
+        </div>
+        <div class="history-meta">
+          <span>{{ op.created_at }}</span>
+          <span>{{ op.step_done }}/{{ op.step_total }} 步 · {{ op.progress }}%</span>
+          <span v-if="op.error" class="text-BROKEN">{{ op.error }}</span>
+        </div>
+      </div>
+    </el-drawer>
+  </div>
+
+  <script src="/static/vendor/vue.global.prod.js"></script>
+  <script src="/static/vendor/element-plus.full.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

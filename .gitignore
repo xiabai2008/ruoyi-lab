@@ -23,7 +23,10 @@ runtime/*
 runtime/*/run.log
 runtime/*/run.err.log
 mysql/
-tools/
+# tools/ 下是 redis/nacos/tomcat 等二进制；只把管理平台源码放行。
+tools/*
+!tools/panel/
+!tools/panel/**
 .m2/
 certs/
 
@@ -50,6 +53,7 @@ reports_d1/
 .state/*.pid
 .state/*.status.json
 .state/*.log
+.state/python-path.txt
 *.pid
 *.log
 
